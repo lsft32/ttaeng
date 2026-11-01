@@ -1,0 +1,35 @@
+html, body { height: 100%; overflow: hidden; }
+body { background: var(--panel); }
+#card { height: 100%; display: flex; flex-direction: column; padding: 14px 14px 10px; gap: 8px; }
+
+header { display: flex; justify-content: space-between; align-items: center; }
+.status { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; }
+.right { display: flex; align-items: center; gap: 8px; }
+button.icon { border: none; padding: 2px 6px; background: transparent; color: var(--muted); }
+
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--wait); }
+.dot.busy { animation: pulse 1.2s ease-in-out infinite; }
+.dot.ready { background: var(--ok); }
+@keyframes pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .dot.busy { animation: none; } }
+
+.bar { height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+#fill { height: 100%; width: 0; background: var(--wait); transition: width 0.4s ease; }
+#fill.ready { background: var(--ok); }
+.sub { font-size: 12px; }
+
+.checks { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.checks li { flex: 1; text-align: center; font-size: 12px; padding: 4px 0; border-radius: 6px; background: var(--track); color: var(--muted); }
+.checks li.ok { background: var(--ok-soft); color: var(--ok); }
+.checks li.wait { background: var(--wait-soft); color: var(--wait); }
+
+.items { list-style: none; margin: 0; padding: 0; flex: 1; overflow-y: auto; border-top: 1px solid var(--line); }
+.items li { display: grid; grid-template-columns: 1fr 44px 54px 58px; gap: 6px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.items .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.items .cpu, .items .time { text-align: right; font-size: 12px; }
+.items .empty { display: block; color: var(--muted); padding: 10px 0; border: none; }
+
+.bg { font-size: 12px; color: var(--muted); min-height: 16px; }
+.advice { font-size: 12px; background: var(--track); border-radius: 6px; padding: 8px 10px; }
+.advice b { display: block; margin-bottom: 2px; }
+footer { display: flex; justify-content: space-between; align-items: center; }

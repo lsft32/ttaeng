@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "overlay·details 창 기본 권한",
+  "windows": ["overlay", "details"],
+  "permissions": ["core:default"]
+}

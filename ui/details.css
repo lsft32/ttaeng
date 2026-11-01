@@ -1,0 +1,47 @@
+body { padding: 0 0 24px; }
+h1 { font-size: 20px; margin: 0; display: inline; margin-right: 10px; }
+h2 { font-size: 16px; margin: 0; }
+h3 { font-size: 14px; margin: 0 0 10px; }
+
+.top {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 14px 20px; background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.actions { display: flex; align-items: center; gap: 14px; }
+.toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+
+main { padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; max-width: 1100px; }
+#current { display: flex; flex-direction: column; gap: 14px; }
+#current[hidden], #empty[hidden] { display: none; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.cardHead { display: flex; justify-content: space-between; align-items: baseline; }
+.titleRow { display: flex; gap: 10px; align-items: baseline; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.stat .label { font-size: 12px; color: var(--muted); display: flex; gap: 4px; align-items: center; }
+.stat .value { font-size: 20px; font-weight: 600; margin-top: 4px; }
+.stat .value small { font-size: 12px; font-weight: 400; color: var(--muted); }
+
+#timeline { overflow-x: auto; }
+#timeline svg { display: block; min-width: 560px; }
+#timeline .row-label { font-size: 12px; fill: var(--ink); }
+#timeline .axis { font-size: 11px; fill: var(--muted); }
+#timeline .grid { stroke: var(--line); }
+#timeline .ready { stroke: var(--ok); stroke-width: 2; }
+#timeline .net { stroke: var(--run); stroke-dasharray: 4 3; }
+#timeline .marker { font-size: 11px; }
+.legend { display: flex; gap: 12px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+
+.adv { border-left: 3px solid var(--accent); padding: 6px 10px; margin-bottom: 8px; }
+.adv b { display: block; margin-bottom: 2px; }
+.adv .rule { font-size: 11px; color: var(--muted); margin-right: 6px; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 12px; }
+th { color: var(--muted); font-weight: 500; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--track); }
+tbody tr.sel { background: var(--ok-soft); }
