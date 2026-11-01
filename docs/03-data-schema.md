@@ -1,4 +1,4 @@
-# Settle — 데이터 스키마
+# 땡해줘 — 데이터 스키마
 
 | 항목 | 내용 |
 |---|---|
@@ -6,8 +6,8 @@
 | 작성일 | 2026-11-01 |
 
 DB는 쓰지 않고 앱 데이터 폴더(Tauri `app_data_dir`)의 파일 3개를 쓴다.
-- Windows: `%APPDATA%\com.lsft32.settle\`
-- Mac: `~/Library/Application Support/com.lsft32.settle/`
+- Windows: `%APPDATA%\com.lsft32.ttaeng\`
+- Mac: `~/Library/Application Support/com.lsft32.ttaeng/`
 
 | 파일 | 형식 | 내용 |
 |---|---|---|
@@ -33,7 +33,7 @@ DB는 쓰지 않고 앱 데이터 폴더(Tauri `app_data_dir`)의 파일 3개를
 | `grade` | string | A/B/C/D |
 | `network_s` | float? | 네트워크 연결 시점, 실패 시 null |
 | `aux_idle_s` | float? | 보조 지표 달성 시점 |
-| `self_cpu_avg` | float | 측정 중 Settle 평균 CPU (코어 1개 기준 %) |
+| `self_cpu_avg` | float | 측정 중 앱 자신의 평균 CPU (코어 1개 기준 %) |
 | `bottleneck` | string? | 가장 늦게 안정된 항목 키 |
 | `items` | ItemRecord[] | 항목별 결과 |
 | `background` | string[] | 관찰된 백그라운드 작업 이름 |

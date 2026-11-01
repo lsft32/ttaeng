@@ -67,7 +67,7 @@ function renderCards(r) {
   cards.push(
     stat("네트워크", r.network_s !== null ? secs(r.network_s) : "연결 안 됨"),
     stat("시스템 안정(보조)", r.aux_idle_s !== null ? secs(r.aux_idle_s) : "-", "", "시스템 CPU 사용률 20% 이하 구간이 누적 10초가 된 시점. Microsoft Post Boot 정의의 근사치이며 판정에는 쓰지 않습니다."),
-    stat("Settle 자체 CPU", `${r.self_cpu_avg.toFixed(1)}%`, "평균", "측정 중 Settle 자신이 쓴 CPU(코어 1개 기준). 측정 부하 확인용입니다."),
+    stat("땡해줘 자체 CPU", `${r.self_cpu_avg.toFixed(1)}%`, "평균", "측정 중 땡해줘 자신이 쓴 CPU(코어 1개 기준). 측정 부하 확인용입니다."),
   );
   $("cards").replaceChildren(...cards);
 }
@@ -206,7 +206,7 @@ async function loadAuto() {
   $("autoWrap").title =
     st.method === "run_key"
       ? "작업 스케줄러 등록에 실패해 Run 키로 등록했습니다. Run 키 항목은 Windows가 로그인 후 늦게 실행해서 측정 초반 몇 초를 놓칠 수 있습니다."
-      : "로그인할 때 Settle을 자동으로 실행합니다.";
+      : "로그인할 때 땡해줘를 자동으로 실행합니다.";
 }
 
 $("auto").addEventListener("change", async (e) => {

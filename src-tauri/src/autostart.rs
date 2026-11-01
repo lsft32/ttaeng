@@ -10,7 +10,7 @@ pub struct AutoStatus {
     pub method: String,
 }
 
-const NAME: &str = "Settle";
+use crate::platform::APP_NAME as NAME;
 
 fn st(enabled: bool, method: &str) -> AutoStatus {
     AutoStatus { enabled, method: method.into() }
@@ -69,7 +69,7 @@ mod imp {
 
     fn plist_path() -> PathBuf {
         let home = std::env::var("HOME").unwrap_or_default();
-        PathBuf::from(home).join("Library/LaunchAgents/com.lsft32.settle.plist")
+        PathBuf::from(home).join("Library/LaunchAgents/com.lsft32.ttaeng.plist")
     }
 
     fn esc(s: &str) -> String {
@@ -86,7 +86,7 @@ mod imp {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.lsft32.settle</string>
+  <key>Label</key><string>com.lsft32.ttaeng</string>
   <key>ProgramArguments</key><array><string>{}</string></array>
   <key>RunAtLoad</key><true/>
   <key>ProcessType</key><string>Interactive</string>

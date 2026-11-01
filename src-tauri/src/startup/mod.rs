@@ -1,4 +1,4 @@
-//! 시작 항목 수집. OS별 등록 위치를 읽고, 중복과 Settle 자신을 뺀다.
+//! 시작 항목 수집. OS별 등록 위치를 읽고, 중복과 앱 자신을 뺀다.
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -59,7 +59,7 @@ pub fn collect(store: &Store, self_exe: &str) -> Vec<StartupItem> {
     let self_key = normalize_path(self_exe);
     let mut seen = HashSet::new();
     raw.into_iter()
-        .filter(|i| i.key != self_key && i.name != "Settle")
+        .filter(|i| i.key != self_key && i.name != crate::platform::APP_NAME)
         .filter(|i| seen.insert(i.key.clone()))
         .collect()
 }

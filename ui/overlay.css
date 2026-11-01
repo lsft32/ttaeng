@@ -4,17 +4,23 @@ body { background: var(--panel); }
 
 header { display: flex; justify-content: space-between; align-items: center; }
 .status { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; }
+#title { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; line-height: 1; }
+#title.freeze { color: var(--ice); animation: shiver 2.4s ease-in-out infinite; }
+#title.thaw { color: var(--ok); animation: pop 0.45s ease-out; }
+.forced { font-size: 12px; font-weight: 400; }
+@keyframes shiver { 0%, 88%, 100% { transform: translateX(0); } 91% { transform: translateX(-1px); } 94% { transform: translateX(1px); } 97% { transform: translateX(-1px); } }
+@keyframes pop { 0% { transform: scale(0.6); opacity: 0; } 70% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); } }
 .right { display: flex; align-items: center; gap: 8px; }
 button.icon { border: none; padding: 2px 6px; background: transparent; color: var(--muted); }
 
-.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--wait); }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ice); }
 .dot.busy { animation: pulse 1.2s ease-in-out infinite; }
 .dot.ready { background: var(--ok); }
 @keyframes pulse { 50% { opacity: 0.35; } }
-@media (prefers-reduced-motion: reduce) { .dot.busy { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .dot.busy, #title.freeze, #title.thaw { animation: none; } }
 
 .bar { height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
-#fill { height: 100%; width: 0; background: var(--wait); transition: width 0.4s ease; }
+#fill { height: 100%; width: 0; background: var(--ice); transition: width 0.4s ease; }
 #fill.ready { background: var(--ok); }
 .sub { font-size: 12px; }
 

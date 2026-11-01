@@ -228,7 +228,7 @@ pub fn refresh_logon_tasks(store: &Store) {
         .filter_map(|v| serde_json::from_value::<LogonTask>(v).ok())
         .filter(|t| {
             let exe = expand_env(&t.exe).to_lowercase();
-            !sysroot.iter().any(|s| exe.starts_with(s.as_str())) && t.name != "Settle"
+            !sysroot.iter().any(|s| exe.starts_with(s.as_str())) && t.name != crate::platform::APP_NAME
         })
         .collect();
     store.save_tasks(&LogonTaskCache { updated: crate::model::now_f() as u64, tasks });

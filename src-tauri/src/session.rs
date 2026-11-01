@@ -210,9 +210,37 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
     }
 }
 
+/// 쓰면 안 되는 동안은 "얼음!", 사용 가능 판정 후에는 "땡!".
+pub fn freeze_label(ready: bool) -> &'static str {
+    if ready { "땡!" } else { "얼음!" }
+}
+
 fn publish(app: &AppHandle, shared: &Shared, view: SessionView) {
     let _ = app.emit("session", &view);
-    if let Ok(mut v) = shared.view.lock() {
-        *v = Some(view);
+    let ready = view.ready_s.is_some();
+    let changed = match shared.view.lock() {
+        Ok(mut v) => {
+            let prev = v.as_ref().map(|p| p.ready_s.is_some());
+            *v = Some(view);
+            prev != Some(ready)
+        }
+        Err(_) => false,
+    };
+    // 트레이 갱신은 메인 스레드를 기다리므로 잠금을 놓은 뒤에 한다.
+    if changed {
+        if let Some(tray) = app.tray_by_id("main") {
+            let _ = tray.set_tooltip(Some(format!("{} · {}", platform::APP_NAME, freeze_label(ready))));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::freeze_label;
+
+    #[test]
+    fn freeze_label_follows_ready() {
+        assert_eq!(freeze_label(false), "얼음!");
+        assert_eq!(freeze_label(true), "땡!");
     }
 }

@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>Settle</title>
+  <title>땡해줘</title>
   <link rel="stylesheet" href="common.css" />
   <link rel="stylesheet" href="overlay.css" />
 </head>
@@ -11,8 +11,9 @@
     <header>
       <div class="status">
         <span id="dot" class="dot"></span>
-        <span id="title">준비 중</span>
-        <span id="info" class="tip" title="필수 체크리스트(바탕화면·시작 항목·네트워크)가 모두 충족된 상태가 3초 유지되면 '사용 가능'입니다. 시간은 바탕화면이 뜬 시점부터 잽니다.">i</span>
+        <span id="title" class="freeze">얼음!</span>
+        <span id="forced" class="muted forced" title="일부 항목이 타임아웃으로 판정에서 빠진 뒤 땡!이 됐습니다." hidden>일부 지연</span>
+        <span id="info" class="tip" title="얼음! = 시작 작업이 아직 돌고 있어 쓰면 느린 상태입니다. 필수 체크리스트(바탕화면·시작 항목·네트워크)가 모두 충족된 상태가 3초 유지되면 땡!(사용 가능)으로 바뀝니다. 시간은 바탕화면이 뜬 시점부터 잽니다.">i</span>
       </div>
       <div class="right">
         <span id="clock" class="num muted">00:00</span>

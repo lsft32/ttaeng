@@ -1,8 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Settle",
-  "version": "0.1.0",
-  "identifier": "com.lsft32.settle",
+  "productName": "땡해줘",
+  "mainBinaryName": "ttaeng",
+  "version": "0.2.0",
+  "identifier": "com.lsft32.ttaeng",
   "build": {
     "frontendDist": "../ui"
   },
@@ -12,7 +13,7 @@
       {
         "label": "overlay",
         "url": "overlay.html",
-        "title": "Settle",
+        "title": "땡해줘",
         "width": 360,
         "height": 440,
         "visible": false,
@@ -27,7 +28,7 @@
       {
         "label": "details",
         "url": "details.html",
-        "title": "Settle",
+        "title": "땡해줘",
         "width": 860,
         "height": 700,
         "minWidth": 640,
@@ -58,6 +59,9 @@
     "windows": {
       "nsis": {
         "installMode": "currentUser"
+      },
+      "wix": {
+        "language": "ko-KR"
       }
     }
   }

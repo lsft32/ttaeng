@@ -12,7 +12,7 @@ pub struct Sample {
     pub procs: ProcTable,
     /// 시스템 전체 CPU 사용률(0~100).
     pub sys_cpu: f64,
-    /// Settle 자신의 CPU(코어 1개 기준 %).
+    /// 앱 자신의 CPU(코어 1개 기준 %).
     pub self_cpu: f64,
 }
 

@@ -118,7 +118,7 @@ fn build_tray(app: &tauri::App, shared: &Arc<Shared>) -> tauri::Result<()> {
         *g = Some(auto.clone());
     }
     let mut builder = TrayIconBuilder::with_id("main")
-        .tooltip("Settle")
+        .tooltip(platform::APP_NAME)
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, ev| match ev.id().as_ref() {
@@ -166,8 +166,8 @@ pub fn run() {
                 shared.store.save_settings(&settings);
             }
             build_tray(app, &shared)?;
-            // 동작 확인용: SETTLE_DEMO=1이면 부팅 측정 대신 데모 측정으로 시작한다.
-            let demo = std::env::var("SETTLE_DEMO").is_ok_and(|v| v == "1");
+            // 동작 확인용: TTAENG_DEMO=1이면 부팅 측정 대신 데모 측정으로 시작한다.
+            let demo = std::env::var("TTAENG_DEMO").is_ok_and(|v| v == "1");
             session::start(app.handle().clone(), demo);
             Ok(())
         })
@@ -187,7 +187,7 @@ pub fn run() {
             start_demo
         ])
         .build(tauri::generate_context!())
-        .expect("Settle 실행 실패")
+        .expect("땡해줘 실행 실패")
         .run(|_app, e| {
             if let RunEvent::ExitRequested { api, code, .. } = e {
                 // 창을 모두 닫아도 트레이에 남는다. 트레이 "종료"는 code가 있다.

@@ -14,7 +14,16 @@ function render(v) {
   if (!v) return;
   const ready = v.ready_s !== null;
   $("dot").className = `dot ${ready ? "ready" : "busy"}`;
-  $("title").textContent = ready ? (v.forced ? "사용 가능 (일부 지연)" : "사용 가능") : "준비 중";
+  const title = $("title");
+  const word = ready ? "땡!" : "얼음!";
+  if (title.textContent !== word) {
+    title.textContent = word;
+    // 클래스를 뺐다 넣어야 애니메이션이 다시 돈다.
+    title.className = "";
+    void title.offsetWidth;
+    title.className = ready ? "thaw" : "freeze";
+  }
+  $("forced").hidden = !(ready && v.forced);
   $("clock").textContent = clock(v.t);
   $("demo").hidden = !v.demo;
 

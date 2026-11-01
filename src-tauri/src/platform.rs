@@ -68,3 +68,6 @@ mod imp {
 }
 
 pub use imp::*;
+
+/// 화면·트레이·자동 시작 등록에 쓰는 앱 이름.
+pub const APP_NAME: &str = "땡해줘";
