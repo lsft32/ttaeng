@@ -39,5 +39,9 @@
   - v0.3.0 조치(수동): 파일 이름을 `ttaeng_...`로 변경(API), `scripts/release-assets.mjs latest`로 latest.json 생성·업로드. endpoint에서 0.3.0·3개 플랫폼 확인, 설치 파일 URL 200
   - 이후 릴리스: tauri-action 대신 `npx tauri build` → `release-assets.mjs collect`(ASCII 이름) → 게시 job에서 `latest` 생성 후 `gh release create`로 한 번에 게시. 릴리스 노트는 주석 태그 메시지(없으면 커밋 제목)
 
+## 업데이트 실기 확인
+- 릴리스의 `ttaeng_0.3.0_x64-setup.exe`를 0.2.0 위에 설치(`/S`): 0.3.0으로 바뀜, Run 키·settings.json 유지
+- v0.3.1: 버전만 올린 확인용 릴리스(바뀐 워크플로 첫 실행)
+
 ## 남은 것
-- [ ] 0.3.0 직접 설치 → 0.3.1 릴리스(바뀐 워크플로 첫 실행) → 앱에서 업데이트 설치 확인
+- [ ] 앱에서 0.3.0 → 0.3.1 업데이트 설치 확인
