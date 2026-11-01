@@ -29,7 +29,15 @@
 - 로컬 릴리스 빌드(서명 키 환경변수): `땡해줘_0.3.0_x64-setup.exe`(2.24 MiB) + `.exe.sig` 생성
 - 실행 확인: 상세 화면 헤더에 `v0.3.0`·"업데이트 확인" 버튼 표시. 시작 직후 자동 확인이 돌아 `last_update_check` 기록됨. 아직 릴리스가 없어 실패했지만 자동 확인이라 배너를 띄우지 않음(의도대로)
 
+## v0.3.0 릴리스 (2026-11-02)
+- GitHub Secrets 등록: 자동 모드 권한 정책에 막혀 사용자가 직접 실행
+- 1차(run 41321320122) 실패: Mac에서 단위 테스트 `hosts_are_untrackable` 실패. Windows 경로(`C:\Windows\System32\rundll32.exe`)를 Mac은 백슬래시로 나누지 않음
+  - Mac 컴파일 자체는 처음으로 성공(경고 1건: Windows 전용 import)
+  - 조치: 테스트를 OS별 경로로, import를 `cfg(windows)`로 (ce335ab). 초안 릴리스·태그 삭제 후 같은 태그로 재실행(사용자 승인)
+- 2차(run 41321800800) 빌드·게시 성공, 그러나 **latest.json 누락**
+  - 원인: GitHub가 릴리스 파일 이름의 한글을 지움("땡해줘_0.3.0_x64-setup.exe" → "_0.3.0_x64-setup.exe"). tauri-action이 서명 파일을 이름으로 찾지 못해 "Signature not found for the updater JSON. Skipping upload"
+  - v0.3.0 조치(수동): 파일 이름을 `ttaeng_...`로 변경(API), `scripts/release-assets.mjs latest`로 latest.json 생성·업로드. endpoint에서 0.3.0·3개 플랫폼 확인, 설치 파일 URL 200
+  - 이후 릴리스: tauri-action 대신 `npx tauri build` → `release-assets.mjs collect`(ASCII 이름) → 게시 job에서 `latest` 생성 후 `gh release create`로 한 번에 게시. 릴리스 노트는 주석 태그 메시지(없으면 커밋 제목)
+
 ## 남은 것
-- [ ] GitHub Secrets 등록 (자동 모드 권한 정책으로 차단 → 사용자가 직접 실행)
-- [ ] 커밋·푸시 → 태그 `v0.3.0` push → Actions 결과 확인 (Mac 빌드는 여기서 처음 컴파일됨)
-- [ ] 0.3.0 직접 설치 → 0.3.1 릴리스 → 앱에서 업데이트 설치 확인
+- [ ] 0.3.0 직접 설치 → 0.3.1 릴리스(바뀐 워크플로 첫 실행) → 앱에서 업데이트 설치 확인

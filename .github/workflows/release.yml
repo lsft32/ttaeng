@@ -1,6 +1,8 @@
-# 릴리스: v* 태그를 push하면 Windows(NSIS)·macOS(universal) 설치 파일과 업데이트 파일(서명 포함), latest.json을
-# 이 저장소의 릴리스에 올린다. 두 빌드가 모두 끝난 뒤에 게시(초안 해제)해서, 앱이 반쪽짜리 latest.json을 받지 않게 한다.
+# 릴리스: v* 태그를 push하면 Windows(NSIS)·macOS(universal) 설치 파일과 업데이트 파일(서명 포함)을 만들고,
+# 둘 다 성공한 뒤에 이 저장소의 릴리스로 한 번에 게시한다(latest.json 포함).
+# GitHub는 릴리스 파일 이름의 한글을 지우므로 scripts/release-assets.mjs가 ASCII 이름(ttaeng_...)으로 바꾸고 latest.json을 만든다.
 # 필요한 Secrets: TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+# 릴리스 노트: 주석 태그 메시지(git tag -a vX.Y.Z -m "...")를 쓴다. 없으면 커밋 메시지.
 name: release
 
 on:
@@ -10,39 +12,26 @@ on:
 permissions:
   contents: write
 
-env:
-  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
 jobs:
-  create:
-    runs-on: ubuntu-latest
-    outputs:
-      id: ${{ steps.draft.outputs.id }}
-    steps:
-      - id: draft
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          id=$(gh api -X POST "repos/${{ github.repository }}/releases" \
-            -f tag_name="${{ github.ref_name }}" \
-            -f name="땡해줘 ${{ github.ref_name }}" \
-            -F draft=true -F generate_release_notes=true --jq .id)
-          echo "id=$id" >> "$GITHUB_OUTPUT"
-
   build:
-    needs: create
     strategy:
       fail-fast: true
       matrix:
         include:
           - os: windows-latest
+            name: windows
             args: ""
             targets: ""
+            bundle: src-tauri/target/release/bundle
           - os: macos-latest
+            name: macos
             args: "--target universal-apple-darwin"
             targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+            bundle: src-tauri/target/universal-apple-darwin/release/bundle
     runs-on: ${{ matrix.os }}
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -57,18 +46,33 @@ jobs:
           workspaces: src-tauri
       - run: npm ci
       - run: npm test
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+      - run: npx tauri build ${{ matrix.args }}
+      - run: node scripts/release-assets.mjs collect ${{ matrix.bundle }} dist
+      - uses: actions/upload-artifact@v4
         with:
-          releaseId: ${{ needs.create.outputs.id }}
-          args: ${{ matrix.args }}
-          includeUpdaterJson: true
+          name: ${{ matrix.name }}
+          path: dist/
+          retention-days: 7
 
   publish:
-    needs: [create, build]
+    needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: 릴리스 노트
+        run: |
+          git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          git for-each-ref "refs/tags/${GITHUB_REF_NAME}" --format='%(contents)' > notes.txt
+          [ -s notes.txt ] || git log -1 --format=%s > notes.txt
+          cat notes.txt
+      - run: node scripts/release-assets.mjs latest dist "${GITHUB_REF_NAME}" "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}" "$(cat notes.txt)"
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: gh api -X PATCH "repos/${{ github.repository }}/releases/${{ needs.create.outputs.id }}" -F draft=false --silent
+        run: gh release create "${GITHUB_REF_NAME}" dist/* --title "땡해줘 ${GITHUB_REF_NAME}" --notes-file notes.txt

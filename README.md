@@ -28,8 +28,11 @@ $env:TTAENG_DEMO = '1'; .\src-tauri\target\debug\ttaeng.exe
 2. 태그를 push하면 GitHub Actions(`.github/workflows/release.yml`)가 Windows·Mac을 빌드·서명해 릴리스에 올린다
 
 ```powershell
-git tag v0.3.1; git push origin v0.3.1
+git tag -a v0.3.1 -m "바뀐 내용 한두 줄"; git push origin v0.3.1
 ```
+
+- 태그 메시지가 릴리스 노트이자 앱 업데이트 배너에 보이는 문구가 된다
+- 릴리스 파일 이름은 `ttaeng_...`(GitHub가 한글을 지우므로 `scripts/release-assets.mjs`가 바꾼다)
 
 - 설치된 앱은 측정이 끝난 뒤 6시간 간격으로 `latest.json`을 확인하고, 새 버전이 있으면 상세 화면·트레이에 알린다. 설치는 사용자가 누를 때만 한다
 - 서명 개인키: 개발 PC `~/.tauri/ttaeng.key`(+ `.password`)와 저장소 Secrets `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. **키를 잃어버리면 기존 설치본은 더 이상 업데이트를 받을 수 없다**
