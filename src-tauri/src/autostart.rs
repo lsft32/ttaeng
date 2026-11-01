@@ -10,6 +10,7 @@ pub struct AutoStatus {
     pub method: String,
 }
 
+#[cfg(windows)]
 use crate::platform::APP_NAME as NAME;
 
 fn st(enabled: bool, method: &str) -> AutoStatus {

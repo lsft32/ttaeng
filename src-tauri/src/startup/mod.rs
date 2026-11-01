@@ -83,6 +83,10 @@ mod tests {
 
     #[test]
     fn hosts_are_untrackable() {
+        // 경로 구분자가 OS마다 달라 각 OS의 경로로 확인한다.
+        #[cfg(not(windows))]
+        assert_eq!(matcher_for("/bin/sh"), Matcher::None);
+        #[cfg(windows)]
         assert_eq!(matcher_for("C:\\Windows\\System32\\rundll32.exe"), Matcher::None);
         assert_eq!(matcher_for(""), Matcher::None);
     }
