@@ -24,7 +24,7 @@
 ## 3. 구조
 
 ```
-settle/                      (폴더명은 그대로, 앱 이름은 땡해줘)
+ttaeng/
 ├─ docs/                     문서·진행기록
 ├─ package.json              Tauri CLI만 사용
 ├─ ui/                       프런트 (frontendDist)

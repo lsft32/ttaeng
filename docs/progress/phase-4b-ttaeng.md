@@ -13,7 +13,7 @@
   - 식별자·데이터 폴더·Mac LaunchAgent 라벨: `com.lsft32.ttaeng`
   - 데모 환경변수: `TTAENG_DEMO`
   - MSI는 한글 제품명 때문에 WiX 언어를 `ko-KR`(코드페이지 949)로 지정
-  - 프로젝트 폴더명(`dev_project/settle`)은 그대로 둠
+  - 프로젝트 폴더명: `dev_project/settle` → `dev_project/ttaeng` (같은 날 사용자 요청)
 - 얼음/땡
   - 오버레이 제목: 판정 전 "얼음!"(하늘색, 가끔 떨림), 판정 후 "땡!"(초록, 한 번 튐). 타임아웃으로 빠진 항목이 있으면 "일부 지연" 표시
   - 진행 막대·상태 점도 판정 전에는 하늘색
