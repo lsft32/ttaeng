@@ -9,6 +9,12 @@ h3 { font-size: 14px; margin: 0 0 10px; }
   padding: 14px 20px; background: var(--bg); border-bottom: 1px solid var(--line);
 }
 .actions { display: flex; align-items: center; gap: 14px; }
+.ver { font-size: 12px; margin-left: 6px; }
+.upd { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; background: var(--ice-soft); border: 1px solid var(--line); }
+.upd[hidden] { display: none; }
+.upd.err { background: var(--wait-soft); }
+.updText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.updText .muted { font-size: 12px; white-space: pre-line; }
 .toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 
 main { padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; max-width: 1100px; }

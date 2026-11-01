@@ -8,6 +8,7 @@ mod network;
 mod platform;
 mod session;
 mod startup;
+mod update;
 
 use history::Store;
 use model::{BootRecord, SessionView};
@@ -24,6 +25,8 @@ pub struct Shared {
     pub demo: Mutex<Option<BootRecord>>,
     pub running: AtomicBool,
     pub auto_item: Mutex<Option<CheckMenuItem<Wry>>>,
+    pub update: update::UpdateState,
+    pub update_item: Mutex<Option<MenuItem<Wry>>>,
 }
 
 pub mod ui {
@@ -107,15 +110,34 @@ fn start_demo(app: AppHandle) {
     session::start(app, true);
 }
 
+#[tauri::command]
+fn get_update(app: AppHandle) -> update::UpdateView {
+    update::view(&app)
+}
+
+#[tauri::command]
+fn check_update(app: AppHandle, force: bool) {
+    update::check(&app, force);
+}
+
+#[tauri::command]
+fn install_update(app: AppHandle) -> Result<(), String> {
+    update::install(&app)
+}
+
 fn build_tray(app: &tauri::App, shared: &Arc<Shared>) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "열기", true, None::<&str>)?;
     let demo = MenuItem::with_id(app, "demo", "지금 측정해 보기", true, None::<&str>)?;
     let auto = CheckMenuItem::with_id(app, "auto", "로그인 시 자동 실행", true, autostart::status().enabled, None::<&str>)?;
+    let upd = MenuItem::with_id(app, "update", "업데이트 확인", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "종료", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&open, &demo, &sep, &auto, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &demo, &sep, &auto, &upd, &quit])?;
     if let Ok(mut g) = shared.auto_item.lock() {
         *g = Some(auto.clone());
+    }
+    if let Ok(mut g) = shared.update_item.lock() {
+        *g = Some(upd.clone());
     }
     let mut builder = TrayIconBuilder::with_id("main")
         .tooltip(platform::APP_NAME)
@@ -127,6 +149,15 @@ fn build_tray(app: &tauri::App, shared: &Arc<Shared>) -> tauri::Result<()> {
             "auto" => {
                 let st = if autostart::status().enabled { autostart::disable() } else { autostart::enable(&self_exe()) };
                 let _ = auto.set_checked(st.enabled);
+            }
+            "update" => {
+                // 받아 둔 새 버전이 있으면 설치, 없으면 바로 확인한다. 결과는 상세 화면에 보인다.
+                ui::show_details(app);
+                if update::view(app).available.is_some() {
+                    let _ = update::install(app);
+                } else {
+                    update::check(app, true);
+                }
             }
             "quit" => app.exit(0),
             _ => {}
@@ -147,6 +178,7 @@ fn build_tray(app: &tauri::App, shared: &Arc<Shared>) -> tauri::Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| ui::show_details(app)))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             let shared = Arc::new(Shared {
@@ -155,6 +187,8 @@ pub fn run() {
                 demo: Mutex::new(None),
                 running: AtomicBool::new(false),
                 auto_item: Mutex::new(None),
+                update: update::UpdateState::default(),
+                update_item: Mutex::new(None),
             });
             app.manage(shared.clone());
 
@@ -184,7 +218,10 @@ pub fn run() {
             set_autostart,
             open_details,
             hide_overlay,
-            start_demo
+            start_demo,
+            get_update,
+            check_update,
+            install_update
         ])
         .build(tauri::generate_context!())
         .expect("땡해줘 실행 실패")

@@ -1,6 +1,6 @@
 [package]
 name = "ttaeng"
-version = "0.2.0"
+version = "0.3.0"
 description = "땡해줘 - 부팅 후 언제부터 PC를 써도 되는지 보여주는 도구"
 authors = ["lsft32"]
 edition = "2024"
@@ -18,6 +18,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sysinfo = "0.40"
 tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
 
 [target."cfg(windows)".dependencies]
 winreg = "0.56"

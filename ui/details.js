@@ -209,6 +209,45 @@ async function loadAuto() {
       : "로그인할 때 땡해줘를 자동으로 실행합니다.";
 }
 
+function renderUpdate(u) {
+  if (!u) return;
+  $("ver").textContent = `v${u.current}`;
+  $("ver").title = u.last_check ? `마지막 업데이트 확인: ${when(u.last_check)}` : "아직 업데이트를 확인하지 않았습니다.";
+  const box = $("upd");
+  const btn = $("updInstall");
+  $("updCheck").disabled = u.checking || u.installing || u.measuring;
+  $("updCheck").textContent = u.checking ? "확인 중…" : "업데이트 확인";
+  $("updCheck").title = u.measuring ? "측정 중에는 확인하지 않습니다(측정 결과에 영향)." : "새 버전이 있는지 지금 확인합니다. 자동 확인은 측정이 끝난 뒤 6시간에 한 번입니다.";
+  box.classList.toggle("err", !!u.error && !u.available);
+  if (u.installing) {
+    box.hidden = false;
+    $("updTitle").textContent = `새 버전 ${u.available?.version ?? ""} 설치 중…`;
+    $("updSub").textContent = "내려받은 뒤 설치 창이 잠깐 뜨고, 끝나면 다시 실행됩니다.";
+    btn.hidden = true;
+  } else if (u.available) {
+    box.hidden = false;
+    $("updTitle").textContent = `새 버전 ${u.available.version}이 있습니다 (현재 ${u.current})`;
+    $("updSub").textContent = [u.error ? `설치 실패: ${u.error}` : "", u.available.notes || ""].filter(Boolean).join("\n");
+    btn.hidden = false;
+    btn.disabled = u.measuring;
+    btn.title = u.measuring ? "측정이 끝나면 설치할 수 있습니다." : "내려받아 설치하고 다시 실행합니다. 자동 시작 설정과 부팅 이력은 유지됩니다.";
+  } else if (u.error) {
+    box.hidden = false;
+    $("updTitle").textContent = "업데이트 확인에 실패했습니다";
+    $("updSub").textContent = u.error;
+    btn.hidden = true;
+  } else {
+    box.hidden = true;
+  }
+}
+
+$("updCheck").addEventListener("click", () => invoke("check_update", { force: true }));
+$("updInstall").addEventListener("click", () => invoke("install_update").catch((e) => renderUpdate({ ...lastUpd, error: String(e) })));
+let lastUpd = null;
+listen("update-state", (u) => { lastUpd = u; renderUpdate(u); });
+// 창을 볼 때 자동 확인(6시간 간격 제한은 앱이 판단)
+window.addEventListener("focus", () => invoke("check_update", { force: false }));
+
 $("auto").addEventListener("change", async (e) => {
   await invoke("set_autostart", { enabled: e.target.checked });
   loadAuto();
@@ -219,3 +258,5 @@ window.addEventListener("resize", () => selected && renderTimeline(selected));
 
 load();
 loadAuto();
+invoke("get_update").then((u) => { lastUpd = u; renderUpdate(u); });
+invoke("check_update", { force: false });

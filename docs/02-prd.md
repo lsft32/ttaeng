@@ -2,7 +2,7 @@
 
 | 항목 | 내용 |
 |---|---|
-| 문서 버전 | 1.0 |
+| 문서 버전 | 1.1 (2026-11-02 업데이트 반영) |
 | 작성일 | 2026-11-01 |
 | 근거 | `01-requirements.md` v1.2 |
 
@@ -40,6 +40,7 @@ ttaeng/
    ├─ session.rs             1초 루프, 이벤트 발행, 기록 저장
    ├─ network.rs             연결 확인
    ├─ advice.rs              등급·추천 규칙 (순수 로직, 단위 테스트 대상)
+   ├─ update.rs              업데이트 확인·설치 (측정 중 차단, 6시간 간격)
    ├─ history.rs             이력·설정·캐시 파일
    ├─ autostart.rs           자동 시작 등록 (OS별)
    ├─ platform.rs            기준 프로세스명·시스템 경로·백그라운드 목록 (OS별 상수)
@@ -133,8 +134,13 @@ ttaeng/
 | `open_details` | — | 오버레이 → 상세 |
 | `hide_overlay` | — | 자동 숨김 |
 | `start_demo` | — | 데모 측정 |
+| `get_update` | `UpdateView` | 현재 버전·새 버전·확인/설치 중·측정 중·오류 |
+| `check_update(force)` | — | 확인 요청 (force=false면 6시간 간격, 측정 중이면 무시) |
+| `install_update` | `Result` | 받아 둔 새 버전 설치 후 재실행 |
 
-이벤트: `session` (SessionView, 1초마다), `history-updated`.
+이벤트: `session` (SessionView, 1초마다), `history-updated`, `update-state` (UpdateView).
+
+배포 파일: `.github/workflows/release.yml`(태그 → 초안 릴리스 → Windows·Mac 빌드 → 게시), `src-tauri/windows/hooks.nsh`(제거 훅), `src-tauri/tauri.windows.conf.json`(NSIS만).
 
 ## 8. 진행 단계
 | Phase | 내용 | 완료 기준 |
@@ -146,3 +152,4 @@ ttaeng/
 | 4 | 빌드 | `tauri build` 설치 파일 생성 |
 | 5 | 실측 조정 | 실제 재부팅 측정 후 수치 검토 (사용자) |
 | 6 | Mac 검증 | Mac 실기 빌드·실행 (사용자) |
+| 7 | 업데이트 | v0.3.0 릴리스, 0.3.0 → 0.3.1 업데이트 실기 확인 |

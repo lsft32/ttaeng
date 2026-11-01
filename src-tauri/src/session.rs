@@ -25,8 +25,12 @@ pub fn start(app: AppHandle, demo: bool) {
         return;
     }
     thread::spawn(move || {
+        crate::update::notify(&app);
         run(&app, &shared, demo);
         shared.running.store(false, Ordering::SeqCst);
+        // 측정이 끝난 뒤에만 업데이트를 확인한다(6시간 간격).
+        crate::update::notify(&app);
+        crate::update::check(&app, false);
     });
 }
 

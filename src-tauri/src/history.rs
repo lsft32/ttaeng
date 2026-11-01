@@ -16,6 +16,9 @@ pub struct Store {
 pub struct Settings {
     #[serde(default)]
     pub autostart_initialized: bool,
+    /// 마지막 업데이트 확인 시각(epoch 초). 0이면 확인한 적 없음.
+    #[serde(default)]
+    pub last_update_check: u64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

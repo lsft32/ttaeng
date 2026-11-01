@@ -64,6 +64,9 @@ DB는 쓰지 않고 앱 데이터 폴더(Tauri `app_data_dir`)의 파일 3개를
 | 필드 | 타입 | 기본값 | 설명 |
 |---|---|---|---|
 | `autostart_initialized` | bool | false | 첫 실행 자동 등록을 했는지 |
+| `last_update_check` | int | 0 | 마지막 업데이트 확인 시각(epoch 초). 0이면 확인한 적 없음 |
+
+제거(업데이트 아님) 시 이 파일을 지운다. 다시 설치하면 첫 실행에서 자동 시작을 다시 등록한다.
 
 ## 3. logon_tasks.json (Windows)
 | 필드 | 타입 | 설명 |

@@ -22,6 +22,19 @@ npm run build          # 설치 파일 생성 → src-tauri/target/release/bundl
 $env:TTAENG_DEMO = '1'; .\src-tauri\target\debug\ttaeng.exe
 ```
 
+## 릴리스 (업데이트 배포)
+
+1. `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `package.json`의 버전을 올리고 커밋
+2. 태그를 push하면 GitHub Actions(`.github/workflows/release.yml`)가 Windows·Mac을 빌드·서명해 릴리스에 올린다
+
+```powershell
+git tag v0.3.1; git push origin v0.3.1
+```
+
+- 설치된 앱은 측정이 끝난 뒤 6시간 간격으로 `latest.json`을 확인하고, 새 버전이 있으면 상세 화면·트레이에 알린다. 설치는 사용자가 누를 때만 한다
+- 서명 개인키: 개발 PC `~/.tauri/ttaeng.key`(+ `.password`)와 저장소 Secrets `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. **키를 잃어버리면 기존 설치본은 더 이상 업데이트를 받을 수 없다**
+- 로컬에서 `npm run build`를 하려면 위 두 값을 환경변수로 넣어야 한다(업데이트 서명 파일 생성)
+
 ## 동작 요약
 1. 로그인 시 자동 실행(Windows: 작업 스케줄러 → 실패 시 Run 키, Mac: LaunchAgent). 릴리스 빌드 첫 실행 때 자동 등록
 2. 바탕화면 표시 시각(explorer / Dock 시작 시각)을 기준(t=0)으로 1초마다 시작 항목 프로세스 트리를 관찰. 이 동안 **얼음!**

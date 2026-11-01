@@ -11,6 +11,7 @@
     <div>
       <h1>땡해줘</h1>
       <span class="muted">부팅 후 언제부터 PC를 써도 되는지</span>
+      <span id="ver" class="ver muted"></span>
     </div>
     <div class="actions">
       <label class="toggle" id="autoWrap">
@@ -18,11 +19,20 @@
         <span>로그인 시 자동 실행</span>
         <span id="autoMethod" class="muted"></span>
       </label>
+      <button id="updCheck">업데이트 확인</button>
       <button id="demo" class="primary">지금 측정해 보기</button>
     </div>
   </header>
 
   <main>
+    <section id="upd" class="upd" hidden>
+      <div class="updText">
+        <b id="updTitle"></b>
+        <span id="updSub" class="muted"></span>
+      </div>
+      <button id="updInstall" class="primary" hidden>설치</button>
+    </section>
+
     <section id="empty" class="card" hidden>
       <h2>아직 부팅 기록이 없습니다</h2>
       <p class="muted">다음에 PC를 켜고 로그인하면 자동으로 측정합니다. 지금 화면과 판정이 어떻게 동작하는지는 "지금 측정해 보기"로 확인할 수 있습니다.</p>
