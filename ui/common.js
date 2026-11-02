@@ -46,7 +46,22 @@ const SOURCE_LABEL = {
   detected: "자동 감지",
 };
 
-const BOOT_KIND = { cold: "콜드 부팅", fast_startup: "빠른 시작·재로그인(추정)", demo: "데모 측정" };
+const BOOT_KIND = { cold: "콜드 부팅", fast_startup: "빠른 시작", resume: "최대 절전 복귀", demo: "데모 측정" };
+
+// v1.3 이전 기록은 boot_source가 없고 빠른 시작을 10분 규칙으로 추정했다.
+function bootKindLabel(r) {
+  const label = BOOT_KIND[r.boot_kind] || r.boot_kind;
+  return r.boot_source === "event" || r.boot_kind === "cold" || r.boot_kind === "demo" ? label : `${label}(추정)`;
+}
+
+// 측정이 늦게 시작된 기록의 등급은 참고용이다.
+function gradeBadge(r) {
+  return el(
+    "span",
+    { class: `grade ${r.grade}${r.late_start ? " ref" : ""}`, title: r.late_start ? `측정이 바탕화면보다 ${Math.round(r.measure_start_s)}초 늦게 시작돼 참고용입니다.` : "" },
+    r.late_start ? `${r.grade} 참고` : r.grade,
+  );
+}
 
 function stateBadge(state) {
   return el("span", { class: `state ${state}`, title: STATE_TIP[state] || "" }, STATE_LABEL[state] || state);

@@ -88,3 +88,4 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .grade.B { color: var(--run); background: var(--track); }
 .grade.C { color: var(--wait); background: var(--wait-soft); }
 .grade.D { color: var(--bad); background: var(--track); }
+.grade.ref { opacity: 0.6; font-weight: 500; }

@@ -43,8 +43,23 @@ pub fn build(rec: &BootRecord, prev: &[BootRecord]) -> Vec<Advice> {
     let mut out = Vec::new();
     let os = rec.os.as_str();
 
+    // R0 측정 지연: 앱이 늦게 켜져 그 전의 진행은 보지 못했다. R1·R4는 근거가 약해 내지 않는다.
+    if rec.late_start {
+        let fix = if os == "windows" {
+            "자동 실행이 Run 키로 등록돼 있으면 실행할 때 작업 스케줄러로 옮기므로 다음 로그온부터는 바로 시작됩니다. 상세 화면 위쪽 '로그인 시 자동 실행' 옆 표시가 계속 'Run 키'라면 체크를 껐다 다시 켜 보세요."
+        } else {
+            "로그인 항목에서 땡해줘가 켜져 있는지 확인하세요."
+        };
+        out.push(Advice {
+            rule: "R0".into(),
+            title: format!("땡해줘가 바탕화면보다 {:.0}초 늦게 측정을 시작해 결과는 참고용입니다", rec.measure_start_s),
+            detail: format!("그 전에 끝난 작업의 정확한 시점은 알 수 없어 사용 가능 시간과 등급이 실제와 다를 수 있습니다. {fix}"),
+            item: None,
+        });
+    }
+
     // R1 병목
-    if let Some(key) = &rec.bottleneck {
+    if let Some(key) = rec.bottleneck.as_ref().filter(|_| !rec.late_start) {
         if let Some(it) = rec.items.iter().find(|i| &i.key == key) {
             let met = it.settle_s.unwrap_or(rec.ready_s);
             if rec.ready_s >= 15.0 {
@@ -73,9 +88,10 @@ pub fn build(rec: &BootRecord, prev: &[BootRecord]) -> Vec<Advice> {
     }
 
     // R4 느려짐
-    let same_kind: Vec<&BootRecord> = prev.iter().filter(|p| p.boot_kind == rec.boot_kind).collect();
+    // 늦게 시작한 측정은 비교 대상에서도, 비교하는 쪽에서도 뺀다.
+    let same_kind: Vec<&BootRecord> = prev.iter().filter(|p| p.boot_kind == rec.boot_kind && !p.late_start).collect();
     let recent: Vec<f64> = same_kind.iter().rev().take(5).map(|p| p.ready_s).collect();
-    if let Some(m) = median(recent) {
+    if let Some(m) = median(recent).filter(|_| !rec.late_start) {
         if rec.ready_s >= m * 1.2 && rec.ready_s - m >= 5.0 {
             let last = same_kind.last().unwrap();
             let new_items: Vec<&str> = rec
@@ -172,7 +188,22 @@ mod tests {
             items,
             background: vec![],
             advice: vec![],
+            ..Default::default()
         }
+    }
+
+    #[test]
+    fn late_start_is_reference_only() {
+        let mut r = rec(259.1, vec![it("a", ItemStateKind::Persistent, None)], Some("a"));
+        r.late_start = true;
+        r.measure_start_s = 250.0;
+        r.network_s = None;
+        r.network_before_start = true;
+        let prev: Vec<BootRecord> = (0..5).map(|_| rec(20.0, vec![], None)).collect();
+        let adv = build(&r, &prev);
+        let rules: Vec<&str> = adv.iter().map(|a| a.rule.as_str()).collect();
+        assert_eq!(rules.first(), Some(&"R0"));
+        assert!(!rules.contains(&"R1") && !rules.contains(&"R4") && !rules.contains(&"R5"));
     }
 
     fn it(key: &str, state: ItemStateKind, settle: Option<f64>) -> ItemRecord {

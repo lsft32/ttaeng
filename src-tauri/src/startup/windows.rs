@@ -261,6 +261,57 @@ fn xml_data(xml: &str, name: &str) -> Option<String> {
     None
 }
 
+/// 시스템 로그에서 부팅 종류·부팅 시각·로그온 시각. 일반 권한으로 읽힌다.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BootInfo {
+    /// Kernel-Boot 27 시각
+    pub boot_time: u64,
+    /// 0 콜드 부팅, 1 빠른 시작, 2 최대 절전 복귀
+    pub boot_type: u32,
+    /// Winlogon 7001 시각
+    pub logon_time: Option<u64>,
+}
+
+/// wevtutil XML 출력에서 이벤트별 (시각, 데이터) 목록. 최신순.
+fn events(query: &str, count: u32, field: Option<&str>) -> Vec<(u64, Option<String>)> {
+    let Ok(out) = hidden("wevtutil").args(["qe", "System", &format!("/q:{query}"), &format!("/c:{count}"), "/rd:true", "/f:xml"]).output() else {
+        return vec![];
+    };
+    if !out.status.success() {
+        return vec![];
+    }
+    let xml = String::from_utf8_lossy(&out.stdout);
+    parse_events(&xml, field)
+}
+
+fn parse_events(xml: &str, field: Option<&str>) -> Vec<(u64, Option<String>)> {
+    xml.split("<Event ")
+        .skip(1)
+        .filter_map(|ev| {
+            let i = ev.find("SystemTime=")? + "SystemTime=".len() + 1;
+            let t = iso_to_epoch(ev.get(i..i + 19)?)?;
+            Some((t, field.and_then(|f| xml_data(ev, f))))
+        })
+        .collect()
+}
+
+/// 기준 시각(바탕화면) 직전의 부팅·로그온 이벤트를 찾는다.
+pub fn read_boot_info(anchor: u64) -> Option<BootInfo> {
+    pick_boot_info(
+        &events("*[System[Provider[@Name='Microsoft-Windows-Kernel-Boot'] and EventID=27]]", 5, Some("BootType")),
+        &events("*[System[Provider[@Name='Microsoft-Windows-Winlogon'] and EventID=7001]]", 5, None),
+        anchor,
+    )
+}
+
+fn pick_boot_info(boots: &[(u64, Option<String>)], logons: &[(u64, Option<String>)], anchor: u64) -> Option<BootInfo> {
+    // 이벤트 기록이 바탕화면보다 조금 늦을 수 있어 5초 여유를 둔다.
+    let (boot_time, ty) = boots.iter().find(|(t, _)| *t <= anchor + 5)?;
+    let boot_type = ty.as_deref()?.trim().parse().ok()?;
+    let logon_time = logons.iter().map(|(t, _)| *t).find(|t| *t >= *boot_time && *t <= anchor + 5);
+    Some(BootInfo { boot_time: *boot_time, boot_type, logon_time })
+}
+
 /// 부팅 성능 이벤트(ID 100). 일반 권한으로는 보통 읽을 수 없다.
 pub fn read_event100(boot_time: u64) -> Option<Event100> {
     let out = hidden("wevtutil")
@@ -303,6 +354,33 @@ mod tests {
         assert_eq!(exe_from_command(r#""C:\Program Files\A\a.exe" --min"#), r"C:\Program Files\A\a.exe");
         assert_eq!(exe_from_command(r"C:\Tools\b.EXE /tray"), r"C:\Tools\b.EXE");
         assert_eq!(exe_from_command("LGLivelyWallpaper.exe"), "LGLivelyWallpaper.exe");
+    }
+
+    #[test]
+    fn boot_info_from_events() {
+        let xml = "<Events><Event xmlns='x'><System><TimeCreated SystemTime='1970-01-02T00:00:10.5000000Z'/></System><EventData><Data Name='BootType'>1</Data></EventData></Event>\
+                   <Event xmlns='x'><System><TimeCreated SystemTime='1970-01-01T00:00:10.0000000Z'/></System><EventData><Data Name='BootType'>0</Data></EventData></Event></Events>";
+        let boots = parse_events(xml, Some("BootType"));
+        assert_eq!(boots, vec![(86_410, Some("1".into())), (10, Some("0".into()))]);
+        let logons = vec![(86_412, None), (20, None)];
+        // 바탕화면이 86_420이면 최신 부팅(빠른 시작)과 그 뒤 로그온을 고른다.
+        assert_eq!(
+            pick_boot_info(&boots, &logons, 86_420),
+            Some(BootInfo { boot_time: 86_410, boot_type: 1, logon_time: Some(86_412) })
+        );
+        // 바탕화면이 이전 부팅 직후면 이전 기록을 고른다.
+        assert_eq!(pick_boot_info(&boots, &logons, 30), Some(BootInfo { boot_time: 10, boot_type: 0, logon_time: Some(20) }));
+    }
+
+    #[test]
+    fn real_boot_info_reads() {
+        // 이 PC의 시스템 로그를 일반 권한으로 읽을 수 있는지 확인(값은 PC마다 다름).
+        let now = crate::model::now_f() as u64;
+        let info = read_boot_info(now);
+        eprintln!("boot info: {info:?}");
+        if let Some(b) = info {
+            assert!(b.boot_type <= 2 && b.boot_time <= now + 5);
+        }
     }
 
     #[test]

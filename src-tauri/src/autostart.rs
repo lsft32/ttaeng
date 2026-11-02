@@ -41,9 +41,54 @@ mod imp {
         if run { st(true, "run_key") } else { st(false, "none") }
     }
 
+    fn esc(s: &str) -> String {
+        s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    }
+
+    /// 현재 사용자 로그온 트리거 작업. "모든 사용자"(`/SC ONLOGON`)와 달리 관리자 권한 없이 등록된다.
+    /// 기본값으로 두면 배터리에서 실행 안 함·72시간 뒤 종료·낮은 우선순위(7)라서 직접 지정한다.
+    pub fn task_xml(user: &str, exe: &str) -> String {
+        let (user, exe) = (esc(user), esc(exe));
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>땡해줘: 로그온 직후 부팅 준비 상태를 측정합니다.</Description></RegistrationInfo>
+  <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{user}</UserId></LogonTrigger></Triggers>
+  <Principals><Principal id="Author"><UserId>{user}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>4</Priority>
+  </Settings>
+  <Actions Context="Author"><Exec><Command>{exe}</Command></Exec></Actions>
+</Task>
+"#
+        )
+    }
+
+    fn create_task(exe: &str) -> bool {
+        let user = match (std::env::var("USERDOMAIN"), std::env::var("USERNAME")) {
+            (Ok(d), Ok(u)) => format!("{d}\\{u}"),
+            (_, Ok(u)) => u,
+            _ => return false,
+        };
+        // schtasks /XML은 UTF-16(BOM) 파일을 받는다.
+        let mut bytes = vec![0xFF, 0xFE];
+        bytes.extend(task_xml(&user, exe).encode_utf16().flat_map(|c| c.to_le_bytes()));
+        let path = std::env::temp_dir().join(format!("ttaeng-task-{}.xml", std::process::id()));
+        if std::fs::write(&path, bytes).is_err() {
+            return false;
+        }
+        let done = ok(&["/Create", "/TN", NAME, "/XML", &path.to_string_lossy(), "/F"]);
+        let _ = std::fs::remove_file(&path);
+        done
+    }
+
     pub fn enable(exe: &str) -> AutoStatus {
         let tr = format!("\"{exe}\"");
-        let task = ok(&["/Create", "/TN", NAME, "/TR", &tr, "/SC", "ONLOGON", "/RL", "LIMITED", "/F"]);
+        let task = create_task(exe);
         if let Ok((key, _)) = RegKey::predef(HKEY_CURRENT_USER).create_subkey(RUN) {
             if task {
                 let _ = key.delete_value(NAME);
@@ -125,3 +170,22 @@ mod imp {
 }
 
 pub use imp::{disable, enable, status};
+
+/// 예전 방식(Run 키)으로 등록돼 있으면 작업 스케줄러로 옮긴다. Run 키는 다른 시작프로그램 뒤에 줄을 서서 늦게 실행된다.
+pub fn migrate(exe: &str) {
+    if status().method == "run_key" {
+        enable(exe);
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    #[test]
+    fn task_xml_is_user_scoped_and_escaped() {
+        let x = super::imp::task_xml(r"PC\me", r"C:\A&B\ttaeng.exe");
+        assert!(x.contains(r"<LogonTrigger><Enabled>true</Enabled><UserId>PC\me</UserId>"));
+        assert!(x.contains(r"<Command>C:\A&amp;B\ttaeng.exe</Command>"));
+        assert!(x.contains("<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>"));
+        assert!(x.contains("<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>"));
+    }
+}

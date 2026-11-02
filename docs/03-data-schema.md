@@ -23,8 +23,14 @@ DB는 쓰지 않고 앱 데이터 폴더(Tauri `app_data_dir`)의 파일 3개를
 |---|---|---|
 | `v` | int | 스키마 버전 (1) |
 | `os` | string | `windows` / `macos` |
-| `boot_kind` | string | `cold` / `fast_startup` |
-| `boot_time` | int | OS 부팅 시각 |
+| `boot_source` | string | `event`(Kernel-Boot 27) / `estimate`(10분 규칙) / `sysinfo`(Mac) / 빈 값(데모·v1.3 이전), v1.4 |
+| `power_to_logon_s` | float? | 부팅 → 로그온(Winlogon 7001), 로그인 화면 대기 포함, v1.4 |
+| `logon_to_desktop_s` | float? | 로그온 → 바탕화면, v1.4 |
+| `measure_start_s` | float | 측정(첫 조회) 시작 시각, 기준 대비 초, v1.4 |
+| `late_start` | bool | 측정 시작이 30초 이상 늦음 → 결과 참고용, v1.4 |
+| `network_before_start` | bool | 측정 시작 시 이미 연결 → `network_s`는 null, v1.4 |
+| `boot_kind` | string | `cold` / `fast_startup` / `resume`(최대 절전 복귀, v1.4) / `demo` |
+| `boot_time` | int | OS 부팅 시각 (Windows v1.4: Kernel-Boot 27 이벤트 시각, 못 읽으면 sysinfo) |
 | `anchor_time` | int | 기준 시각 (바탕화면 표시) |
 | `power_to_desktop_s` | float | 부팅~기준 시각 (Windows는 로그인 대기 포함) |
 | `event100` | object? | `{main_path_ms, post_boot_ms, boot_ms}`, 읽을 수 없으면 null |

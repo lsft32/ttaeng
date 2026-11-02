@@ -15,6 +15,10 @@ use tauri::{AppHandle, Emitter, Manager};
 const TAIL_S: f64 = 20.0;
 /// 이 시간보다 늦게 실행됐으면 부팅 직후가 아니라고 본다.
 const LATE_S: f64 = 600.0;
+/// 측정 시작이 바탕화면보다 이만큼 늦으면 결과를 참고용으로 표시한다(요구서 v1.4 R0).
+pub const LATE_START_S: f64 = 30.0;
+/// 로그온 작업으로 탐색기보다 먼저 켜졌을 때 탐색기를 기다리는 최대 시간.
+const WAIT_SHELL_S: u64 = 60;
 
 pub fn start(app: AppHandle, demo: bool) {
     let shared = app.state::<Arc<Shared>>().inner().clone();
@@ -76,19 +80,41 @@ fn boot_kind(anchor: f64, boot: u64, demo: bool) -> String {
     }
 }
 
+/// 시스템 로그의 부팅 종류·시각으로 추정값을 바꾼다(요구서 F8 v1.4).
+#[cfg(windows)]
+fn apply_boot_info(rec: &mut BootRecord, info: Option<startup::windows::BootInfo>) {
+    let Some(b) = info else { return };
+    let anchor = rec.anchor_time as f64;
+    rec.boot_source = "event".into();
+    rec.boot_time = b.boot_time;
+    rec.boot_kind = match b.boot_type {
+        1 => "fast_startup",
+        2 => "resume",
+        _ => "cold",
+    }
+    .into();
+    rec.power_to_desktop_s = round1((anchor - b.boot_time as f64).max(0.0));
+    if let Some(l) = b.logon_time {
+        rec.power_to_logon_s = Some(round1(l.saturating_sub(b.boot_time) as f64));
+        rec.logon_to_desktop_s = Some(round1((anchor - l as f64).max(0.0)));
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn make_view(
     judge: &Judge,
     t: f64,
     demo: bool,
     phase: &str,
-    net_s: Option<f64>,
+    hit: Option<network::NetHit>,
     background: Vec<BackgroundView>,
     top_advice: Option<Advice>,
+    measure_start_s: f64,
 ) -> SessionView {
     let checklist = judge.checklist(t);
-    let network_note = match (net_s, checklist.network) {
-        (Some(s), _) => format!("연결됨 ({s:.1}초)"),
+    let network_note = match (hit, checklist.network) {
+        (Some(h), _) if h.first_try => "측정 시작 전에 이미 연결됨".into(),
+        (Some(h), _) => format!("연결됨 ({:.1}초)", h.t),
         (None, Check::Skip) => "네트워크 없음".into(),
         _ => "확인 중".into(),
     };
@@ -105,6 +131,7 @@ fn make_view(
         items: judge.item_views(),
         background,
         top_advice,
+        measure_start_s,
     }
 }
 
@@ -114,11 +141,21 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
         return;
     };
     thread::sleep(Duration::from_secs(1));
-    let first = col.sample();
+    let mut first = col.sample();
     let boot = Collector::boot_time();
     let self_uid = first.procs.get(&col.self_pid).and_then(|p| p.uid.clone());
+    let mut found = if demo { None } else { find_anchor(&first.procs, boot, &self_uid) };
+    // 작업 스케줄러 로그온 작업은 탐색기보다 먼저 켜질 수 있다.
+    let mut waited = 0;
+    while !demo && found.is_none() && waited < WAIT_SHELL_S {
+        thread::sleep(Duration::from_secs(1));
+        waited += 1;
+        first = col.sample();
+        found = find_anchor(&first.procs, boot, &self_uid);
+    }
     let now = now_f();
-    let anchor = if demo { now } else { find_anchor(&first.procs, boot, &self_uid).unwrap_or(now) };
+    let anchor = found.unwrap_or(now);
+    let measure_start_s = if demo { 0.0 } else { round1((now - anchor).max(0.0)) };
     if !demo && now - anchor > LATE_S {
         ui::show_details(app);
         return;
@@ -140,7 +177,7 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
     let lookback = if demo { f64::INFINITY } else { th::ROOT_LOOKBACK };
     let mut judge = Judge::new(anchor, items, &skip_wait, rules, lookback);
 
-    let net = Arc::new(Mutex::new(None));
+    let net: Arc<Mutex<Option<network::NetHit>>> = Arc::new(Mutex::new(None));
     network::spawn(anchor, net.clone());
     if let Ok(mut d) = shared.demo.lock() {
         if demo {
@@ -160,7 +197,8 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
         }
         let s = col.sample();
         let t = now_f() - anchor;
-        let net_s = net.lock().ok().and_then(|g| *g);
+        let hit = net.lock().ok().and_then(|g| *g);
+        let net_s = network::judge_time(hit);
         judge.tick(t, &s.procs, net_s, s.sys_cpu);
         self_cpu_sum += s.self_cpu;
         samples += 1;
@@ -170,15 +208,17 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
         let finished = judge.ready_declared_t.is_some_and(|d| t >= d + TAIL_S) || t >= th::HARD_CAP + TAIL_S;
         if !finished {
             let phase = if judge.ready_s.is_some() { "ready" } else { "preparing" };
-            publish(app, shared, make_view(&judge, t, demo, phase, net_s, bg, None));
+            publish(app, shared, make_view(&judge, t, demo, phase, hit, bg, None, measure_start_s));
             continue;
         }
 
         let ready_s = judge.ready_s.unwrap_or(round1(t));
+        let late_start = !demo && measure_start_s >= LATE_START_S;
         let mut rec = BootRecord {
             v: 1,
             os: platform::OS.into(),
             boot_kind: boot_kind(anchor, boot, demo),
+            boot_source: if demo { String::new() } else if cfg!(windows) { "estimate".into() } else { "sysinfo".into() },
             boot_time: boot,
             anchor_time: anchor as u64,
             power_to_desktop_s: if demo { 0.0 } else { round1(anchor - boot as f64) },
@@ -186,17 +226,23 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
             ready_s,
             forced: judge.forced,
             grade: advice::grade(ready_s, judge.forced),
-            network_s: net_s,
+            network_s: network::record_time(hit),
+            network_before_start: hit.is_some_and(|h| h.first_try),
             aux_idle_s: judge.aux_s,
             self_cpu_avg: round1(self_cpu_sum / samples.max(1) as f64),
-            bottleneck: judge.bottleneck(),
+            // 늦게 시작한 측정에서는 어떤 항목이 시점을 정했는지 믿을 수 없다.
+            bottleneck: if late_start { None } else { judge.bottleneck() },
             items: judge.item_records(),
             background: bg_seen.into_iter().collect(),
             advice: vec![],
+            measure_start_s,
+            late_start,
+            ..Default::default()
         };
         #[cfg(windows)]
         if !demo {
             rec.event100 = startup::windows::read_event100(boot);
+            apply_boot_info(&mut rec, startup::windows::read_boot_info(anchor as u64));
         }
         let prev: Vec<BootRecord> = history.into_iter().filter(|r| r.boot_kind != "demo").collect();
         rec.advice = advice::build(&rec, &prev);
@@ -208,7 +254,7 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
             let _ = shared.store.append_history(&rec);
         }
         let _ = app.emit("history-updated", ());
-        publish(app, shared, make_view(&judge, t, demo, "done", net_s, bg, rec.advice.first().cloned()));
+        publish(app, shared, make_view(&judge, t, demo, "done", hit, bg, rec.advice.first().cloned(), measure_start_s));
         startup::refresh_cache(&shared.store);
         return;
     }

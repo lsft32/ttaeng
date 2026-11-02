@@ -319,7 +319,8 @@ impl Judge {
                         }
                         if tr.state == ItemStateKind::Running && t - launch.max(0.0) >= th::PERSISTENT_AFTER - th::EPS {
                             tr.state = ItemStateKind::Persistent;
-                            tr.met_s = Some(t);
+                            // 관찰을 늦게 시작했어도 규칙상 지속형이 되는 시각은 실행 + 60초다.
+                            tr.met_s = Some(launch.max(0.0) + th::PERSISTENT_AFTER);
                         }
                     }
                 }
@@ -651,6 +652,17 @@ mod tests {
         assert_eq!(j.item_views()[0].state, ItemStateKind::Persistent);
         assert_eq!(j.ready_s, Some(61.0));
         assert_eq!(j.bottleneck().as_deref(), Some(APP));
+    }
+
+    #[test]
+    fn late_observation_keeps_persistent_time() {
+        // 3초에 실행된 항목을 250초에야 처음 본 경우(앱이 늦게 켜짐): 지속형 시각은 63초여야 한다.
+        let mut j = judge(vec![item(APP)]);
+        for t in 250..=256 {
+            j.tick(t as f64, &table(vec![explorer(), proc(20, 10, APP, 3, 50.0)]), Some(0.0), 0.0);
+        }
+        assert_eq!(j.item_views()[0].state, ItemStateKind::Persistent);
+        assert_eq!(j.ready_s, Some(63.0));
     }
 
     #[test]

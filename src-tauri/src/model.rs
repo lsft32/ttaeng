@@ -105,7 +105,7 @@ pub struct Event100 {
     pub boot_ms: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BootRecord {
     pub v: u32,
     pub os: String,
@@ -124,6 +124,19 @@ pub struct BootRecord {
     pub items: Vec<ItemRecord>,
     pub background: Vec<String>,
     pub advice: Vec<Advice>,
+    // v1.4 추가 필드. 이전 기록에는 없으므로 기본값으로 읽는다.
+    #[serde(default)]
+    pub boot_source: String,
+    #[serde(default)]
+    pub power_to_logon_s: Option<f64>,
+    #[serde(default)]
+    pub logon_to_desktop_s: Option<f64>,
+    #[serde(default)]
+    pub measure_start_s: f64,
+    #[serde(default)]
+    pub late_start: bool,
+    #[serde(default)]
+    pub network_before_start: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -178,6 +191,8 @@ pub struct SessionView {
     pub items: Vec<ItemView>,
     pub background: Vec<BackgroundView>,
     pub top_advice: Option<Advice>,
+    /// 측정을 시작한 시각(기준 대비 초). 30초 이상이면 화면에 참고용임을 알린다.
+    pub measure_start_s: f64,
 }
 
 pub fn round1(v: f64) -> f64 {

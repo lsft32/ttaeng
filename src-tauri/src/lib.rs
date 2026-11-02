@@ -194,10 +194,14 @@ pub fn run() {
 
             // 개발 빌드는 실행 파일 위치가 임시라 자동 시작을 등록하지 않는다.
             let mut settings = shared.store.load_settings();
-            if cfg!(not(debug_assertions)) && !settings.autostart_initialized {
-                autostart::enable(&self_exe());
-                settings.autostart_initialized = true;
-                shared.store.save_settings(&settings);
+            if cfg!(not(debug_assertions)) {
+                if !settings.autostart_initialized {
+                    autostart::enable(&self_exe());
+                    settings.autostart_initialized = true;
+                    shared.store.save_settings(&settings);
+                } else {
+                    autostart::migrate(&self_exe());
+                }
             }
             build_tray(app, &shared)?;
             // 동작 확인용: TTAENG_DEMO=1이면 부팅 측정 대신 데모 측정으로 시작한다.

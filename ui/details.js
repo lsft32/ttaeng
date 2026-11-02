@@ -38,13 +38,25 @@ function renderCards(r) {
   const cards = [
     stat(
       "사용 가능까지",
-      el("span", {}, secs(r.ready_s), " ", el("span", { class: `grade ${r.grade}` }, r.grade)),
-      r.forced ? "강제 판정" : "",
+      el("span", {}, secs(r.ready_s), " ", gradeBadge(r)),
+      r.forced ? "강제 판정" : r.late_start ? `측정 ${Math.round(r.measure_start_s)}초 늦게 시작` : "",
       "바탕화면이 뜬 시점부터 필수 체크리스트가 모두 충족될 때까지. 등급 A ≤30초, B ≤60초, C ≤120초, D 그 이상.",
     ),
-    stat("부팅 종류", BOOT_KIND[r.boot_kind] || r.boot_kind, "", "Windows에서 부팅 시각과 바탕화면 시각이 10분 넘게 떨어져 있으면 빠른 시작 또는 재로그인으로 추정합니다."),
+    stat(
+      "부팅 종류",
+      bootKindLabel(r),
+      "",
+      r.boot_source === "event"
+        ? "Windows 시스템 로그의 부팅 유형(Kernel-Boot 이벤트 27)입니다."
+        : "시스템 로그를 읽지 못해, 부팅 시각과 바탕화면 시각이 10분 넘게 떨어져 있으면 빠른 시작으로 추정했습니다. 로그인 화면에서 오래 기다린 콜드 부팅도 빠른 시작으로 보일 수 있습니다.",
+    ),
   ];
-  if (r.boot_kind !== "demo") {
+  if (r.power_to_logon_s != null && r.logon_to_desktop_s != null) {
+    cards.push(
+      stat("부팅 → 로그온", secs(r.power_to_logon_s), "로그인 대기 포함", "부팅 유형 이벤트 시각부터 로그온(Winlogon 7001)까지. 로그인 화면에서 기다린 시간이 들어갑니다."),
+      stat("로그온 → 바탕화면", secs(r.logon_to_desktop_s), "", "로그온부터 탐색기(바탕화면) 시작까지."),
+    );
+  } else if (r.boot_kind !== "demo") {
     cards.push(
       stat(
         "전원 → 바탕화면",
@@ -65,7 +77,12 @@ function renderCards(r) {
     );
   }
   cards.push(
-    stat("네트워크", r.network_s !== null ? secs(r.network_s) : "연결 안 됨"),
+    stat(
+      "네트워크",
+      r.network_s != null ? secs(r.network_s) : r.network_before_start ? "측정 전 연결" : "연결 안 됨",
+      "",
+      r.network_before_start ? "측정을 시작했을 때 이미 연결돼 있어 연결된 시각은 알 수 없습니다." : "",
+    ),
     stat("시스템 안정(보조)", r.aux_idle_s !== null ? secs(r.aux_idle_s) : "-", "", "시스템 CPU 사용률 20% 이하 구간이 누적 10초가 된 시점. Microsoft Post Boot 정의의 근사치이며 판정에는 쓰지 않습니다."),
     stat("땡해줘 자체 CPU", `${r.self_cpu_avg.toFixed(1)}%`, "평균", "측정 중 땡해줘 자신이 쓴 CPU(코어 1개 기준). 측정 부하 확인용입니다."),
   );
@@ -172,9 +189,9 @@ function renderHistory() {
         "tr",
         { class: r === selected ? "sel" : "" },
         el("td", { class: "num" }, when(r.anchor_time)),
-        el("td", {}, BOOT_KIND[r.boot_kind] || r.boot_kind),
+        el("td", {}, bootKindLabel(r)),
         el("td", { class: "num" }, secs(r.ready_s)),
-        el("td", {}, el("span", { class: `grade ${r.grade}` }, r.grade)),
+        el("td", {}, gradeBadge(r)),
         el("td", {}, bn ? bn.name : "-"),
         el("td", { class: "num" }, r.items.length),
       );

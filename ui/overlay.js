@@ -39,6 +39,9 @@ function render(v) {
   } else {
     sub.append(`시작 항목 ${done} / ${total} 정리됨`);
   }
+  if (!v.demo && v.measure_start_s >= 30) {
+    sub.append(" · ", el("span", { class: "late", title: "그 전에 끝난 작업의 정확한 시점은 알 수 없어 결과는 참고용입니다." }, `측정 ${Math.round(v.measure_start_s)}초 늦게 시작`));
+  }
 
   const c = v.checklist;
   const mark = (s) => (s === "ok" ? "✔" : s === "skip" ? "–" : "◌");
