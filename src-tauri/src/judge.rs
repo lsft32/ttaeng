@@ -102,7 +102,8 @@ impl Tracked {
             Matcher::Path(path) => match p.exe_lc.as_deref() {
                 Some(exe) => exe == path,
                 // 권한 상승·보호 프로세스는 경로를 못 읽는다. 파일 이름으로 대신 맞춘다.
-                None => std::path::Path::new(path).file_name().is_some_and(|f| f.to_string_lossy() == p.file_lc),
+                // 구분자를 직접 나눈다. Path::file_name은 Mac에서 백슬래시를 구분자로 보지 않는다.
+                None => path.rsplit(['\\', '/']).next().is_some_and(|f| f == p.file_lc),
             },
             Matcher::FileName(f) => &p.file_lc == f,
             Matcher::None => false,
