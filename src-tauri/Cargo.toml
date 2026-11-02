@@ -1,6 +1,6 @@
 [package]
 name = "ttaeng"
-version = "0.3.2"
+version = "0.3.3"
 description = "땡해줘 - 부팅 후 언제부터 PC를 써도 되는지 보여주는 도구"
 authors = ["lsft32"]
 edition = "2024"

@@ -87,6 +87,36 @@ pub fn build(rec: &BootRecord, prev: &[BootRecord]) -> Vec<Advice> {
         }
     }
 
+    // R6 늦은 실행: 땡! 이후에 실행된 시작 항목
+    let mut late: Vec<&ItemRecord> = rec.items.iter().filter(|i| i.late && i.launch_s.is_some()).collect();
+    if !late.is_empty() {
+        let last = late.iter().filter_map(|i| i.launch_s).fold(0.0_f64, f64::max);
+        late.sort_by(|a, b| b.cpu_seconds.total_cmp(&a.cpu_seconds));
+        let heavy: Vec<String> = late
+            .iter()
+            .take(3)
+            .map(|i| format!("{}(CPU {:.1}코어·초, 디스크 {:.0}MB)", i.name, i.cpu_seconds, i.disk_mb))
+            .collect();
+        let mut names: Vec<&str> = rec.refreeze.iter().map(|r| r.name.as_str()).collect();
+        names.dedup();
+        let busy: f64 = rec.refreeze.iter().map(|r| r.to_s - r.from_s).sum();
+        let refreeze = if names.is_empty() {
+            String::new()
+        } else {
+            format!("그중 {}이(가) 실행되며 다시 얼음!이 됐습니다(합계 {busy:.0}초). ", names.join(", "))
+        };
+        out.push(Advice {
+            rule: "R6".into(),
+            title: format!("땡! 이후에도 시작프로그램 {}개가 늦게 실행됐습니다 (마지막 {last:.0}초)", late.len()),
+            detail: format!(
+                "{refreeze}부담이 큰 순서: {}. 시작프로그램이 차례로 실행되는 것으로 보여, 쓰지 않는 항목을 끄면 뒤에 있는 항목이 앞당겨질 수 있습니다. {}",
+                heavy.join(", "),
+                how_to(os, Source::RunKey)
+            ),
+            item: None,
+        });
+    }
+
     // R4 느려짐
     // 늦게 시작한 측정은 비교 대상에서도, 비교하는 쪽에서도 뺀다.
     let same_kind: Vec<&BootRecord> = prev.iter().filter(|p| p.boot_kind == rec.boot_kind && !p.late_start).collect();
@@ -117,6 +147,8 @@ pub fn build(rec: &BootRecord, prev: &[BootRecord]) -> Vec<Advice> {
 
     // R2 지속형 반복, R3 미실행 반복
     let last2: Vec<&BootRecord> = prev.iter().rev().take(2).collect();
+    // R3은 10분까지 지켜본 기록(v2)끼리만 센다. v1은 45초만 봐서 늦게 실행된 항목도 미실행으로 남았다.
+    let last2_v2: Vec<&BootRecord> = prev.iter().rev().filter(|r| r.v >= RECORD_V).take(2).collect();
     let state_of = |r: &BootRecord, key: &str| r.items.iter().find(|i| i.key == key).map(|i| i.state);
     for it in &rec.items {
         if it.state == ItemStateKind::Persistent {
@@ -134,14 +166,14 @@ pub fn build(rec: &BootRecord, prev: &[BootRecord]) -> Vec<Advice> {
                 });
             }
         }
-        if it.state == ItemStateKind::NotLaunched && it.source != Source::Detected && last2.len() == 2 {
-            let all = last2.iter().all(|r| state_of(r, &it.key) == Some(ItemStateKind::NotLaunched));
+        if it.state == ItemStateKind::NotLaunched && it.source != Source::Detected && rec.v >= RECORD_V && last2_v2.len() == 2 {
+            let all = last2_v2.iter().all(|r| state_of(r, &it.key) == Some(ItemStateKind::NotLaunched));
             if all {
                 out.push(Advice {
                     rule: "R3".into(),
                     title: format!("'{}'은(는) 등록만 되어 있고 실행되지 않습니다", it.name),
                     detail: format!(
-                        "최근 3회 모두 실행되지 않았습니다. 삭제된 프로그램의 등록이 남아 있을 수 있습니다. 경로: {}. {}",
+                        "최근 3회 모두 로그온 후 10분 안에 실행되지 않았습니다. 삭제된 프로그램의 등록이 남아 있을 수 있습니다. 경로: {}. {}",
                         it.key,
                         how_to(os, it.source)
                     ),
@@ -171,7 +203,7 @@ mod tests {
 
     fn rec(ready: f64, items: Vec<ItemRecord>, bottleneck: Option<&str>) -> BootRecord {
         BootRecord {
-            v: 1,
+            v: RECORD_V,
             os: "windows".into(),
             boot_kind: "cold".into(),
             boot_time: 0,
@@ -190,6 +222,31 @@ mod tests {
             advice: vec![],
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn r3_counts_only_v2_records() {
+        let gone = |v: u32| {
+            let mut r = rec(20.0, vec![it("x", ItemStateKind::NotLaunched, None)], None);
+            r.v = v;
+            r
+        };
+        // v1 기록 2개 + 이번 v2: 늦게 실행되던 항목일 수 있으므로 R3를 내지 않는다.
+        assert!(!build(&gone(2), &[gone(1), gone(1)]).iter().any(|a| a.rule == "R3"));
+        assert!(build(&gone(2), &[gone(2), gone(2)]).iter().any(|a| a.rule == "R3"));
+    }
+
+    #[test]
+    fn r6_reports_late_launches_and_refreeze() {
+        let mut late = it("lg", ItemStateKind::Settled, Some(160.0));
+        late.late = true;
+        late.launch_s = Some(153.0);
+        let mut r = rec(30.0, vec![it("a", ItemStateKind::Settled, Some(20.0)), late], None);
+        r.refreeze = vec![Refreeze { key: "lg".into(), name: "lg".into(), from_s: 154.0, to_s: 160.0 }];
+        let adv = build(&r, &[]);
+        let r6 = adv.iter().find(|a| a.rule == "R6").unwrap();
+        assert!(r6.title.contains("1개") && r6.title.contains("153초"));
+        assert!(r6.detail.contains("다시 얼음!") && r6.detail.contains("6초"));
     }
 
     #[test]
@@ -217,6 +274,7 @@ mod tests {
             peak_cpu: 50.0,
             cpu_seconds: 3.0,
             disk_mb: 40.0,
+            late: false,
         }
     }
 

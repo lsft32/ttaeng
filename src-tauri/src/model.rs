@@ -62,6 +62,8 @@ impl StartupItem {
 #[serde(rename_all = "snake_case")]
 pub enum ItemStateKind {
     Waiting,
+    /// 45초 안에 실행되지 않음. 판정을 막지 않고 계속 지켜본다(요구서 v1.5).
+    Deferred,
     Running,
     Settled,
     Exited,
@@ -73,7 +75,7 @@ pub enum ItemStateKind {
 impl ItemStateKind {
     /// 판정을 더 이상 막지 않는 상태인지.
     pub fn is_done(self) -> bool {
-        !matches!(self, Self::Waiting | Self::Running)
+        !matches!(self, Self::Waiting | Self::Deferred | Self::Running)
     }
 }
 
@@ -96,6 +98,18 @@ pub struct ItemRecord {
     pub peak_cpu: f64,
     pub cpu_seconds: f64,
     pub disk_mb: f64,
+    /// 45초 이후 실행(늦은 실행). v1.5
+    #[serde(default)]
+    pub late: bool,
+}
+
+/// 땡! 이후 늦게 실행된 항목 때문에 다시 얼음!이 된 구간.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Refreeze {
+    pub key: String,
+    pub name: String,
+    pub from_s: f64,
+    pub to_s: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,7 +151,17 @@ pub struct BootRecord {
     pub late_start: bool,
     #[serde(default)]
     pub network_before_start: bool,
+    // v1.5
+    #[serde(default)]
+    pub observe_until_s: f64,
+    #[serde(default)]
+    pub all_launched_s: Option<f64>,
+    #[serde(default)]
+    pub refreeze: Vec<Refreeze>,
 }
+
+/// 기록 스키마 버전. 2부터 늦은 실행을 10분까지 지켜본 기록이다.
+pub const RECORD_V: u32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -193,6 +217,10 @@ pub struct SessionView {
     pub top_advice: Option<Advice>,
     /// 측정을 시작한 시각(기준 대비 초). 30초 이상이면 화면에 참고용임을 알린다.
     pub measure_start_s: f64,
+    /// 땡! 이후 늦은 항목 때문에 다시 바쁜 상태.
+    pub refrozen: bool,
+    /// 아직 실행되지 않고 기다리는 항목 수.
+    pub deferred: usize,
 }
 
 pub fn round1(v: f64) -> f64 {

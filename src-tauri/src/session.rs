@@ -132,6 +132,8 @@ fn make_view(
         background,
         top_advice,
         measure_start_s,
+        refrozen: judge.refrozen(),
+        deferred: judge.deferred_count(),
     }
 }
 
@@ -164,8 +166,11 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
     let self_exe = std::env::current_exe().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
     let items = startup::collect(&shared.store, &self_exe);
     let history = shared.store.load_history();
+    // v1.4 이전 기록은 45초만 봐서 늦게 실행되는 항목도 미실행으로 남았다. 10분 관찰 기록만 쓴다.
     let skip_wait: HashSet<String> = history
-        .last()
+        .iter()
+        .rev()
+        .find(|r| r.v >= RECORD_V)
         .map(|r| r.items.iter().filter(|i| i.state == ItemStateKind::NotLaunched).map(|i| i.key.clone()).collect())
         .unwrap_or_default();
     let rules = DetectRules {
@@ -190,8 +195,11 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
     let mut samples = 0u32;
     let mut bg_seen: BTreeSet<String> = BTreeSet::new();
     let mut next = Instant::now();
+    let mut tail_done = false;
+    let mut was_frozen = false;
     loop {
-        next += Duration::from_secs(1);
+        // 땡! 뒤 늦은 항목만 지켜보는 구간은 부하를 줄이려고 2초 간격으로 본다.
+        next += Duration::from_secs(if tail_done { 2 } else { 1 });
         if let Some(wait) = next.checked_duration_since(Instant::now()) {
             thread::sleep(wait);
         }
@@ -205,9 +213,22 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
         let bg = background(&s.procs, &judge);
         bg_seen.extend(bg.iter().map(|b| b.name.clone()));
 
-        let finished = judge.ready_declared_t.is_some_and(|d| t >= d + TAIL_S) || t >= th::HARD_CAP + TAIL_S;
+        tail_done = judge.ready_declared_t.is_some_and(|d| t >= d + TAIL_S);
+        // 데모는 지금 떠 있지 않은 항목이 앞으로 실행될 일이 없으므로 기다리지 않는다.
+        let finished = tail_done && (demo || judge.watch_done() || t >= th::OBSERVE_CAP);
+        let frozen = judge.refrozen();
+        if frozen && !was_frozen {
+            ui::show_overlay(app);
+        }
+        was_frozen = frozen;
         if !finished {
-            let phase = if judge.ready_s.is_some() { "ready" } else { "preparing" };
+            let phase = if judge.ready_s.is_none() {
+                "preparing"
+            } else if tail_done {
+                "watching"
+            } else {
+                "ready"
+            };
             publish(app, shared, make_view(&judge, t, demo, phase, hit, bg, None, measure_start_s));
             continue;
         }
@@ -215,7 +236,7 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
         let ready_s = judge.ready_s.unwrap_or(round1(t));
         let late_start = !demo && measure_start_s >= LATE_START_S;
         let mut rec = BootRecord {
-            v: 1,
+            v: RECORD_V,
             os: platform::OS.into(),
             boot_kind: boot_kind(anchor, boot, demo),
             boot_source: if demo { String::new() } else if cfg!(windows) { "estimate".into() } else { "sysinfo".into() },
@@ -237,6 +258,9 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
             advice: vec![],
             measure_start_s,
             late_start,
+            observe_until_s: round1(t),
+            all_launched_s: judge.all_launched_s(),
+            refreeze: judge.finish_refreeze(t),
             ..Default::default()
         };
         #[cfg(windows)]
@@ -267,10 +291,10 @@ pub fn freeze_label(ready: bool) -> &'static str {
 
 fn publish(app: &AppHandle, shared: &Shared, view: SessionView) {
     let _ = app.emit("session", &view);
-    let ready = view.ready_s.is_some();
+    let ready = view.ready_s.is_some() && !view.refrozen;
     let changed = match shared.view.lock() {
         Ok(mut v) => {
-            let prev = v.as_ref().map(|p| p.ready_s.is_some());
+            let prev = v.as_ref().map(|p| p.ready_s.is_some() && !p.refrozen);
             *v = Some(view);
             prev != Some(ready)
         }

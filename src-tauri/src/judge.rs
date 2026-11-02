@@ -12,6 +12,8 @@ pub mod th {
     pub const REACT_CPU: f64 = 20.0;
     pub const REACT_HOLD: f64 = 3.0;
     pub const NOT_LAUNCHED_AT: f64 = 45.0;
+    /// 늦게 실행되는 항목을 지켜보는 상한(기준 대비 초). 실측에서 마지막 시작프로그램이 422초에 실행됨.
+    pub const OBSERVE_CAP: f64 = 600.0;
     pub const PERSISTENT_AFTER: f64 = 60.0;
     pub const NET_TIMEOUT: f64 = 30.0;
     pub const HARD_CAP: f64 = 300.0;
@@ -57,6 +59,10 @@ struct Tracked {
     peak_cpu: f64,
     cpu_seconds: f64,
     disk_bytes: f64,
+    /// 45초 이후 실행된 항목. 판정을 막지 않고, 땡! 이후 무거우면 다시 얼음!을 만든다.
+    late: bool,
+    heavy_since: Option<f64>,
+    heavy: bool,
 }
 
 impl Tracked {
@@ -77,20 +83,27 @@ impl Tracked {
             peak_cpu: 0.0,
             cpu_seconds: 0.0,
             disk_bytes: 0.0,
+            late: false,
+            heavy_since: None,
+            heavy: false,
         }
     }
 
     fn blocking(&self) -> bool {
         match self.state {
             ItemStateKind::Waiting => !self.optional,
-            ItemStateKind::Running => true,
+            ItemStateKind::Running => !self.late,
             _ => false,
         }
     }
 
     fn matches(&self, p: &ProcInfo) -> bool {
         match &self.item.matcher {
-            Matcher::Path(path) => p.exe_lc.as_deref() == Some(path.as_str()),
+            Matcher::Path(path) => match p.exe_lc.as_deref() {
+                Some(exe) => exe == path,
+                // 권한 상승·보호 프로세스는 경로를 못 읽는다. 파일 이름으로 대신 맞춘다.
+                None => std::path::Path::new(path).file_name().is_some_and(|f| f.to_string_lossy() == p.file_lc),
+            },
             Matcher::FileName(f) => &p.file_lc == f,
             Matcher::None => false,
         }
@@ -113,6 +126,11 @@ pub struct Judge {
     pub forced: bool,
     aux_accum: f64,
     pub aux_s: Option<f64>,
+    /// 시작 시각을 읽을 수 없는 프로세스를 처음 본 시각(epoch 초).
+    first_seen: HashMap<u32, u64>,
+    refreeze: Vec<Refreeze>,
+    /// 진행 중인 다시 얼음! 구간: (시작 시각, 항목 인덱스)
+    frozen_since: Option<(f64, usize)>,
 }
 
 impl Judge {
@@ -145,6 +163,9 @@ impl Judge {
             forced: false,
             aux_accum: 0.0,
             aux_s: None,
+            first_seen: HashMap::new(),
+            refreeze: Vec::new(),
+            frozen_since: None,
         }
     }
 
@@ -199,7 +220,22 @@ impl Judge {
         }
     }
 
-    pub fn tick(&mut self, t: f64, procs: &ProcTable, net_ok_s: Option<f64>, sys_cpu: f64) {
+    pub fn tick(&mut self, t: f64, raw: &ProcTable, net_ok_s: Option<f64>, sys_cpu: f64) {
+        // 권한 상승·보호 프로세스는 시작 시각이 0으로 온다. 처음 본 시각으로 대신한다.
+        let patched;
+        let procs = if raw.values().any(|p| p.start == 0) {
+            let now = (self.anchor + t).max(0.0) as u64;
+            let mut m = raw.clone();
+            for (pid, p) in m.iter_mut() {
+                if p.start == 0 {
+                    p.start = *self.first_seen.entry(*pid).or_insert(now);
+                }
+            }
+            patched = m;
+            &patched
+        } else {
+            raw
+        };
         let prev = self.last_t.unwrap_or(t - 1.0);
         let dt = (t - prev).max(0.001);
         self.last_t = Some(t);
@@ -288,9 +324,20 @@ impl Judge {
                         tr.state = ItemStateKind::Running;
                         tr.launch_s = Some(first as f64 - anchor);
                         tr.observe_s = Some(t);
+                        tr.late = first as f64 - anchor >= th::NOT_LAUNCHED_AT - th::EPS;
                     } else if t >= th::NOT_LAUNCHED_AT - th::EPS {
-                        tr.state = ItemStateKind::NotLaunched;
+                        // 미실행으로 확정하지 않고 계속 지켜본다(요구서 v1.5).
+                        tr.state = ItemStateKind::Deferred;
                         tr.met_s = Some(if tr.optional { 0.0 } else { t });
+                    }
+                }
+                ItemStateKind::Deferred => {
+                    if !alive.is_empty() {
+                        let first = alive.iter().map(|p| p.start).min().unwrap_or(0);
+                        tr.state = ItemStateKind::Running;
+                        tr.launch_s = Some(first as f64 - anchor);
+                        tr.observe_s = Some(t);
+                        tr.late = true;
                     }
                 }
                 ItemStateKind::Running => {
@@ -317,6 +364,16 @@ impl Judge {
                             tr.met_s = tr.settle_s;
                             tr.window.clear();
                         }
+                        if tr.late && declared && tr.state == ItemStateKind::Running {
+                            if cpu >= th::REACT_CPU {
+                                let hs = *tr.heavy_since.get_or_insert(prev);
+                                if t - hs >= th::REACT_HOLD - th::EPS {
+                                    tr.heavy = true;
+                                }
+                            } else {
+                                tr.heavy_since = None;
+                            }
+                        }
                         if tr.state == ItemStateKind::Running && t - launch.max(0.0) >= th::PERSISTENT_AFTER - th::EPS {
                             tr.state = ItemStateKind::Persistent;
                             // 관찰을 늦게 시작했어도 규칙상 지속형이 되는 시각은 실행 + 60초다.
@@ -341,6 +398,19 @@ impl Judge {
                         tr.react_start = None;
                     }
                 }
+            }
+        }
+
+        // 4-1. 땡! 이후 늦은 항목이 무거우면 다시 얼음!
+        if declared {
+            let heavy = self.items.iter().position(|tr| tr.late && tr.heavy && tr.state == ItemStateKind::Running);
+            match (self.frozen_since, heavy) {
+                (None, Some(idx)) => {
+                    let from = self.items[idx].heavy_since.unwrap_or(t);
+                    self.frozen_since = Some((from, idx));
+                }
+                (Some(_), None) => self.close_refreeze(t),
+                _ => {}
             }
         }
 
@@ -381,8 +451,44 @@ impl Judge {
         }
     }
 
+    fn close_refreeze(&mut self, t: f64) {
+        if let Some((from, idx)) = self.frozen_since.take() {
+            let tr = &self.items[idx];
+            self.refreeze.push(Refreeze { key: tr.item.key.clone(), name: tr.item.name.clone(), from_s: round1(from), to_s: round1(t) });
+        }
+    }
+
+    /// 땡! 이후 다시 바쁜 상태인지.
+    pub fn refrozen(&self) -> bool {
+        self.frozen_since.is_some()
+    }
+
+    /// 아직 실행되지 않고 기다리는 항목 수.
+    pub fn deferred_count(&self) -> usize {
+        self.items.iter().filter(|tr| tr.state == ItemStateKind::Deferred).count()
+    }
+
+    /// 더 지켜볼 것이 없는지: 기다릴 항목(직전 기록에서 미실행이 아닌 것)이 없고 실행 중인 항목도 없다.
+    pub fn watch_done(&self) -> bool {
+        !self.items.iter().any(|tr| {
+            (tr.state == ItemStateKind::Deferred && !tr.optional) || tr.state == ItemStateKind::Running
+        })
+    }
+
+    /// 세션 종료 시 열린 구간을 닫고 다시 얼음! 구간 목록을 돌려준다.
+    pub fn finish_refreeze(&mut self, t: f64) -> Vec<Refreeze> {
+        self.close_refreeze(t);
+        self.refreeze.clone()
+    }
+
+    /// 마지막으로 실행된 시작 항목의 실행 시각.
+    pub fn all_launched_s(&self) -> Option<f64> {
+        self.items.iter().filter_map(|tr| tr.launch_s).reduce(f64::max).map(round1)
+    }
+
     fn met_max(&self, t: f64) -> f64 {
-        let items = self.items.iter().filter_map(|tr| tr.met_s).fold(0.0_f64, f64::max);
+        // 늦게 실행된 항목은 사용 가능 시점을 정하지 않는다(안 B).
+        let items = self.items.iter().filter(|tr| !tr.late).filter_map(|tr| tr.met_s).fold(0.0_f64, f64::max);
         items.max(self.network_met(t).unwrap_or(0.0)).max(0.0)
     }
 
@@ -445,7 +551,7 @@ impl Judge {
                 // 측정이 끝날 때까지 결론이 안 난 항목은 지속형으로 남긴다.
                 state: match tr.state {
                     ItemStateKind::Running => ItemStateKind::Persistent,
-                    ItemStateKind::Waiting => ItemStateKind::NotLaunched,
+                    ItemStateKind::Waiting | ItemStateKind::Deferred => ItemStateKind::NotLaunched,
                     s => s,
                 },
                 launch_s: tr.launch_s.map(round1),
@@ -453,6 +559,7 @@ impl Judge {
                 peak_cpu: round1(tr.peak_cpu),
                 cpu_seconds: round1(tr.cpu_seconds),
                 disk_mb: round1(tr.disk_bytes / 1_048_576.0),
+                late: tr.late,
             })
             .collect()
     }
@@ -466,7 +573,7 @@ impl Judge {
         let best = self
             .items
             .iter()
-            .filter(|tr| matches!(tr.state, ItemStateKind::Settled | ItemStateKind::Exited | ItemStateKind::Persistent))
+            .filter(|tr| !tr.late && matches!(tr.state, ItemStateKind::Settled | ItemStateKind::Exited | ItemStateKind::Persistent))
             .filter_map(|tr| tr.met_s.map(|m| (m, tr)))
             .max_by(|a, b| a.0.total_cmp(&b.0))?;
         let net = self.net_ok_s.unwrap_or(th::NET_TIMEOUT);
@@ -652,6 +759,72 @@ mod tests {
         assert_eq!(j.item_views()[0].state, ItemStateKind::Persistent);
         assert_eq!(j.ready_s, Some(61.0));
         assert_eq!(j.bottleneck().as_deref(), Some(APP));
+    }
+
+    #[test]
+    fn late_launch_does_not_block_and_refreezes_when_heavy() {
+        // 실측: 시작프로그램이 45초 뒤에도 차례로 실행됨(153초 등). 안 B: 땡!은 먼저, 늦은 항목이 무거우면 다시 얼음!
+        const LATE: &str = "c:\\apps\\late.exe";
+        let mut j = judge(vec![item(APP), item(LATE)]);
+        let mut late_seen = false;
+        for t in 1..=200 {
+            let mut ps = vec![explorer(), proc(20, 10, APP, 1, if t <= 5 { 50.0 } else { 0.5 })];
+            if t >= 153 {
+                // 실행 직후 10초 무겁고 그 뒤 조용
+                ps.push(proc(30, 10, LATE, 153, if t < 163 { 60.0 } else { 0.5 }));
+            }
+            j.tick(t as f64, &table(ps), Some(2.0), 0.0);
+            if t == 60 {
+                assert!(j.ready_s.is_some(), "늦은 항목을 기다리지 않고 땡!");
+                assert_eq!(j.deferred_count(), 1);
+                assert!(!j.watch_done(), "늦게 실행 대기 항목이 있으면 계속 지켜본다");
+            }
+            if t == 158 {
+                assert!(j.refrozen(), "늦은 항목이 무거우면 다시 얼음!");
+                late_seen = true;
+            }
+        }
+        assert!(late_seen);
+        assert!(!j.refrozen(), "늦은 항목이 안정되면 다시 땡!");
+        assert!(j.watch_done());
+        let ready = j.ready_s.unwrap();
+        assert!(ready < 45.0 + 0.1, "늦은 항목은 사용 가능 시점을 바꾸지 않음: {ready}");
+        let fr = j.finish_refreeze(200.0);
+        assert_eq!(fr.len(), 1);
+        assert!(fr[0].from_s >= 153.0 && fr[0].to_s <= 170.0, "{fr:?}");
+        let rec = j.item_records().into_iter().find(|r| r.key == LATE).unwrap();
+        assert!(rec.late && rec.state == ItemStateKind::Settled);
+        assert_eq!(j.all_launched_s(), Some(153.0));
+    }
+
+    #[test]
+    fn never_launched_within_cap_becomes_not_launched() {
+        let mut j = judge(vec![item(APP), item("c:\\apps\\gone.exe")]);
+        for t in 1..=60 {
+            j.tick(t as f64, &table(vec![explorer(), proc(20, 10, APP, 1, 0.5)]), Some(2.0), 0.0);
+        }
+        let gone = j.item_records().into_iter().find(|r| r.key.ends_with("gone.exe")).unwrap();
+        assert_eq!(gone.state, ItemStateKind::NotLaunched);
+    }
+
+    #[test]
+    fn elevated_process_without_path_or_start_is_matched() {
+        // 실측: CrossEXService는 sysinfo에서 exe=None, start=0으로 보였다.
+        const SVC: &str = "c:\\program files (x86)\\iniline\\crossex\\crossex\\crossexservice.exe";
+        let mut j = judge(vec![item(SVC)]);
+        for t in 1..=50 {
+            let mut ps = vec![explorer()];
+            if t >= 43 {
+                let mut p = proc(40, 999, SVC, 0, 0.5);
+                p.exe_lc = None;
+                p.start = 0;
+                ps.push(p);
+            }
+            j.tick(t as f64, &table(ps), Some(2.0), 0.0);
+        }
+        let r = &j.item_records()[0];
+        assert_ne!(r.state, ItemStateKind::NotLaunched);
+        assert_eq!(r.launch_s, Some(43.0));
     }
 
     #[test]

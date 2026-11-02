@@ -21,7 +21,7 @@ DB는 쓰지 않고 앱 데이터 폴더(Tauri `app_data_dir`)의 파일 3개를
 
 | 필드 | 타입 | 설명 |
 |---|---|---|
-| `v` | int | 스키마 버전 (1) |
+| `v` | int | 스키마 버전 (1, v1.5부터 2: 10분 관찰 기록) |
 | `os` | string | `windows` / `macos` |
 | `boot_source` | string | `event`(Kernel-Boot 27) / `estimate`(10분 규칙) / `sysinfo`(Mac) / 빈 값(데모·v1.3 이전), v1.4 |
 | `power_to_logon_s` | float? | 부팅 → 로그온(Winlogon 7001), 로그인 화면 대기 포함, v1.4 |
@@ -29,6 +29,9 @@ DB는 쓰지 않고 앱 데이터 폴더(Tauri `app_data_dir`)의 파일 3개를
 | `measure_start_s` | float | 측정(첫 조회) 시작 시각, 기준 대비 초, v1.4 |
 | `late_start` | bool | 측정 시작이 30초 이상 늦음 → 결과 참고용, v1.4 |
 | `network_before_start` | bool | 측정 시작 시 이미 연결 → `network_s`는 null, v1.4 |
+| `observe_until_s` | float | 세션 종료 시각(기준 대비 초), v1.5 |
+| `all_launched_s` | float? | 마지막으로 실행된 시작 항목의 실행 시각, v1.5 |
+| `refreeze` | `{key, name, from_s, to_s}[]` | 땡! 이후 다시 얼음!이 된 구간, v1.5 |
 | `boot_kind` | string | `cold` / `fast_startup` / `resume`(최대 절전 복귀, v1.4) / `demo` |
 | `boot_time` | int | OS 부팅 시각 (Windows v1.4: Kernel-Boot 27 이벤트 시각, 못 읽으면 sysinfo) |
 | `anchor_time` | int | 기준 시각 (바탕화면 표시) |
@@ -54,6 +57,7 @@ DB는 쓰지 않고 앱 데이터 폴더(Tauri `app_data_dir`)의 파일 3개를
 | `state` | string | `settled` / `exited` / `persistent` / `not_launched` / `untrackable` |
 | `launch_s` | float? | 실행 감지 시점 (기준 이전 실행이면 음수 가능) |
 | `settle_s` | float? | 안정 시점 |
+| `late` | bool | 45초 이후 실행(늦은 실행), v1.5 |
 | `peak_cpu` | float | 최대 트리 CPU |
 | `cpu_seconds` | float | 트리 CPU 누적 (코어·초) |
 | `disk_mb` | float | 트리 디스크 누적 MB |
@@ -92,6 +96,6 @@ DB는 쓰지 않고 앱 데이터 폴더(Tauri `app_data_dir`)의 파일 3개를
 | `checklist` | `{desktop, items, network}` | 각 `ok` / `wait` / `skip` |
 | `network_note` | string | `연결됨` / `확인 중` / `네트워크 없음` |
 | `progress` | `{done, total}` | |
-| `items` | `{key, name, source, state, cpu, launch_s, settle_s}[]` | `state`는 ItemRecord + `waiting` / `running` |
+| `items` | `{key, name, source, state, cpu, launch_s, settle_s}[]` | `state`는 ItemRecord + `waiting` / `running` / `deferred`(늦게 실행 대기, v1.5) |
 | `background` | `{name, cpu}[]` | |
 | `top_advice` | Advice? | 사용 가능 후 1건 |

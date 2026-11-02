@@ -4,15 +4,18 @@ let hideTimer = null;
 let hovering = false;
 let lastPhase = null;
 
+let lastRefrozen = false;
+
 function scheduleHide() {
   clearTimeout(hideTimer);
-  if (hovering || lastPhase !== "done") return;
+  // 땡! 뒤 늦은 항목을 지켜보는 동안에도 숨긴다. 다시 얼음!이 되면 앱이 창을 다시 띄운다.
+  if (hovering || lastRefrozen || (lastPhase !== "watching" && lastPhase !== "done")) return;
   hideTimer = setTimeout(() => invoke("hide_overlay"), HIDE_AFTER_MS);
 }
 
 function render(v) {
   if (!v) return;
-  const ready = v.ready_s !== null;
+  const ready = v.ready_s !== null && !v.refrozen;
   $("dot").className = `dot ${ready ? "ready" : "busy"}`;
   const title = $("title");
   const word = ready ? "땡!" : "얼음!";
@@ -24,6 +27,7 @@ function render(v) {
     title.className = ready ? "thaw" : "freeze";
   }
   $("forced").hidden = !(ready && v.forced);
+  const declared = v.ready_s !== null;
   $("clock").textContent = clock(v.t);
   $("demo").hidden = !v.demo;
 
@@ -34,8 +38,13 @@ function render(v) {
 
   const sub = $("sub");
   sub.replaceChildren();
-  if (ready) {
+  if (declared) {
     sub.append(`바탕화면 후 ${secs(v.ready_s)} · 등급 `, el("span", { class: `grade ${v.grade}` }, v.grade));
+    if (v.refrozen) {
+      sub.append(" · ", el("span", { class: "late", title: "땡! 이후 늦게 실행된 시작프로그램이 CPU를 많이 쓰고 있습니다. 조용해지면 다시 땡!이 됩니다." }, "늦게 실행된 항목 처리 중"));
+    } else if (v.deferred > 0) {
+      sub.append(" · ", el("span", { title: "45초 안에 실행되지 않은 항목입니다. 판정은 막지 않고 최대 10분까지 지켜봅니다." }, `늦게 실행 대기 ${v.deferred}개`));
+    }
   } else {
     sub.append(`시작 항목 ${done} / ${total} 정리됨`);
   }
@@ -78,8 +87,9 @@ function render(v) {
     adv.hidden = true;
   }
 
-  if (v.phase !== lastPhase) {
+  if (v.phase !== lastPhase || v.refrozen !== lastRefrozen) {
     lastPhase = v.phase;
+    lastRefrozen = v.refrozen;
     scheduleHide();
   }
 }

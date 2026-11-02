@@ -76,6 +76,18 @@ function renderCards(r) {
       ),
     );
   }
+  const late = r.items.filter((i) => i.late);
+  if (late.length) {
+    const busy = (r.refreeze || []).reduce((s, f) => s + (f.to_s - f.from_s), 0);
+    cards.push(
+      stat(
+        "시작프로그램 실행 완료",
+        secs(r.all_launched_s),
+        `늦게 실행 ${late.length}개${busy > 0 ? ` · 다시 얼음! ${Math.round(busy)}초` : ""}`,
+        "마지막 시작프로그램이 실행된 시각. 45초 이후 실행된 항목은 땡! 판정을 막지 않고, CPU를 많이 쓰면 그동안 다시 얼음!으로 표시했습니다.",
+      ),
+    );
+  }
   cards.push(
     stat(
       "네트워크",
@@ -91,10 +103,12 @@ function renderCards(r) {
 
 function renderTimeline(r) {
   const items = r.items.filter((i) => i.state !== "untrackable");
-  const ends = items.map((i) => i.settle_s ?? 0);
+  // 지속형 막대는 실행 + 60초까지(그때 지속형으로 분류됨).
+  const endOf = (i) => i.settle_s ?? (i.state === "persistent" && i.launch_s != null ? Math.max(i.launch_s, 0) + 60 : r.ready_s);
+  const ends = items.filter((i) => i.state !== "not_launched").map(endOf);
   const starts = items.map((i) => i.launch_s ?? 0);
   const minX = Math.min(0, ...starts.filter((s) => s > -30), 0);
-  const maxX = Math.max(r.ready_s, r.network_s ?? 0, ...ends, 10) * 1.08;
+  const maxX = Math.max(r.ready_s, r.network_s ?? 0, ...ends, ...starts, 10) * 1.08;
   const W = Math.max(560, $("timeline").clientWidth || 760);
   const L = 170;
   const R = 16;
@@ -110,6 +124,12 @@ function renderTimeline(r) {
     g.append(svg("text", { x: x(s), y: 12, "text-anchor": "middle", class: "axis" }, `${s}s`));
   }
 
+  for (const f of r.refreeze || []) {
+    const band = svg("rect", { x: x(f.from_s), y: top - 4, width: Math.max(2, x(f.to_s) - x(f.from_s)), height: H - top, style: "fill:var(--wait-soft)" });
+    band.append(svg("title", {}, `다시 얼음! ${secs(f.from_s)} ~ ${secs(f.to_s)} · ${f.name}`));
+    g.append(band);
+  }
+
   items.forEach((i, idx) => {
     const y = top + idx * rowH;
     const label = i.name.length > 22 ? `${i.name.slice(0, 21)}…` : i.name;
@@ -121,7 +141,7 @@ function renderTimeline(r) {
       return;
     }
     const a = i.launch_s ?? 0;
-    const b = i.settle_s ?? r.ready_s;
+    const b = endOf(i);
     const bar = svg("rect", {
       x: x(a),
       y: y + 5,
@@ -134,7 +154,7 @@ function renderTimeline(r) {
       svg(
         "title",
         {},
-        `${i.name}\n실행 ${secs(i.launch_s)} → ${i.state === "persistent" ? "지속형" : `안정 ${secs(i.settle_s)}`}\n최대 CPU ${Math.round(i.peak_cpu)}% · CPU ${i.cpu_seconds.toFixed(1)}코어·초 · 디스크 ${i.disk_mb.toFixed(1)}MB`,
+        `${i.name}${i.late ? " (늦은 실행)" : ""}\n실행 ${secs(i.launch_s)} → ${i.state === "persistent" ? "지속형" : `안정 ${secs(i.settle_s)}`}\n최대 CPU ${Math.round(i.peak_cpu)}% · CPU ${i.cpu_seconds.toFixed(1)}코어·초 · 디스크 ${i.disk_mb.toFixed(1)}MB`,
       ),
     );
     g.append(bar);
@@ -151,6 +171,7 @@ function renderTimeline(r) {
     el("span", {}, el("i", { style: "background:var(--run)" }), "지속형"),
     el("span", {}, el("i", { style: "background:var(--ok);width:2px" }), "사용 가능"),
     el("span", {}, el("i", { style: "background:var(--run);width:2px" }), "네트워크"),
+    ...(r.refreeze && r.refreeze.length ? [el("span", {}, el("i", { style: "background:var(--wait-soft)" }), "다시 얼음!")] : []),
   );
 }
 
