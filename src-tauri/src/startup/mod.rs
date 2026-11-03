@@ -74,7 +74,12 @@ pub fn refresh_cache(store: &Store) {
 
 #[allow(dead_code)]
 pub fn item(name: &str, source: Source, exe: &str) -> StartupItem {
-    StartupItem::new(name, source, matcher_for(exe))
+    let matcher = matcher_for(exe);
+    // 경로가 있는 항목만 확인한다(파일 이름만 있으면 PATH 검색이라 알 수 없음).
+    let missing = matches!(matcher, Matcher::Path(_)) && !Path::new(exe.trim().trim_matches('"')).exists();
+    let mut it = StartupItem::new(name, source, matcher);
+    it.missing = missing;
+    it
 }
 
 #[cfg(test)]
@@ -89,6 +94,14 @@ mod tests {
         #[cfg(windows)]
         assert_eq!(matcher_for("C:\\Windows\\System32\\rundll32.exe"), Matcher::None);
         assert_eq!(matcher_for(""), Matcher::None);
+    }
+
+    #[test]
+    fn missing_executable_is_flagged() {
+        let gone = item("Gone", Source::RunKey, "C:/no/such/dir/gone.exe");
+        assert!(gone.missing);
+        let bare = item("Bare", Source::RunKey, "LGLivelyWallpaper.exe");
+        assert!(!bare.missing, "파일 이름만 있으면 판단하지 않음");
     }
 
     #[test]

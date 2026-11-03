@@ -14,6 +14,8 @@ pub mod th {
     pub const NOT_LAUNCHED_AT: f64 = 45.0;
     /// 늦게 실행되는 항목을 지켜보는 상한(기준 대비 초). 실측에서 마지막 시작프로그램이 422초에 실행됨.
     pub const OBSERVE_CAP: f64 = 600.0;
+    /// 예약 작업 로그온 지연이 이 이상이면 "일부러 늦게 실행"으로 본다. 몇 초 지연은 일반 시작 항목과 같다.
+    pub const PLANNED_DELAY: f64 = 45.0;
     pub const PERSISTENT_AFTER: f64 = 60.0;
     pub const NET_TIMEOUT: f64 = 30.0;
     pub const HARD_CAP: f64 = 300.0;
@@ -63,14 +65,36 @@ struct Tracked {
     late: bool,
     heavy_since: Option<f64>,
     heavy: bool,
+    /// 일부러 늦게(예약 지연) 또는 조건부(유휴 시)로 실행되는 항목. 사용 가능 판정을 막지 않는다.
+    planned: bool,
+    /// 이 시각(기준 대비 초)까지는 실행을 기다린다. 0이면 기다리지 않는다.
+    wait_until: f64,
 }
 
 impl Tracked {
     fn new(item: StartupItem, optional: bool) -> Self {
         let untrackable = item.matcher == Matcher::None;
+        let planned = item.delay_s >= th::PLANNED_DELAY || item.idle_only;
+        let wait_until = if optional || item.idle_only || item.missing {
+            0.0
+        } else if item.delay_s >= th::PLANNED_DELAY {
+            // 예약 지연이 관찰 상한 안에 끝나면 그때까지 기다린다(OneDrive 10분처럼 넘으면 기다리지 않음).
+            let due = item.delay_s + th::NOT_LAUNCHED_AT;
+            if due <= th::OBSERVE_CAP { due } else { 0.0 }
+        } else {
+            th::OBSERVE_CAP
+        };
+        let state = if untrackable {
+            ItemStateKind::Untrackable
+        } else if item.missing {
+            ItemStateKind::NotLaunched
+        } else {
+            ItemStateKind::Waiting
+        };
+        let met0 = untrackable || item.missing;
         Self {
             item,
-            state: if untrackable { ItemStateKind::Untrackable } else { ItemStateKind::Waiting },
+            state,
             optional,
             pids: HashSet::new(),
             launch_s: None,
@@ -78,7 +102,7 @@ impl Tracked {
             window: VecDeque::new(),
             react_start: None,
             settle_s: None,
-            met_s: if untrackable { Some(0.0) } else { None },
+            met_s: if met0 { Some(0.0) } else { None },
             cur_cpu: 0.0,
             peak_cpu: 0.0,
             cpu_seconds: 0.0,
@@ -86,12 +110,14 @@ impl Tracked {
             late: false,
             heavy_since: None,
             heavy: false,
+            planned,
+            wait_until,
         }
     }
 
     fn blocking(&self) -> bool {
         match self.state {
-            ItemStateKind::Waiting => !self.optional,
+            ItemStateKind::Waiting => !self.optional && !self.planned,
             ItemStateKind::Running => !self.late,
             _ => false,
         }
@@ -329,7 +355,7 @@ impl Judge {
                     } else if t >= th::NOT_LAUNCHED_AT - th::EPS {
                         // 미실행으로 확정하지 않고 계속 지켜본다(요구서 v1.5).
                         tr.state = ItemStateKind::Deferred;
-                        tr.met_s = Some(if tr.optional { 0.0 } else { t });
+                        tr.met_s = Some(if tr.optional || tr.planned { 0.0 } else { t });
                     }
                 }
                 ItemStateKind::Deferred => {
@@ -466,13 +492,13 @@ impl Judge {
 
     /// 아직 실행되지 않고 기다리는 항목 수.
     pub fn deferred_count(&self) -> usize {
-        self.items.iter().filter(|tr| tr.state == ItemStateKind::Deferred).count()
+        self.items.iter().filter(|tr| tr.state == ItemStateKind::Deferred && !tr.item.idle_only).count()
     }
 
-    /// 더 지켜볼 것이 없는지: 기다릴 항목(직전 기록에서 미실행이 아닌 것)이 없고 실행 중인 항목도 없다.
-    pub fn watch_done(&self) -> bool {
+    /// 더 지켜볼 것이 없는지: 아직 기다릴 시각이 남은 대기 항목이 없고 실행 중인 항목도 없다.
+    pub fn watch_done(&self, t: f64) -> bool {
         !self.items.iter().any(|tr| {
-            (tr.state == ItemStateKind::Deferred && !tr.optional) || tr.state == ItemStateKind::Running
+            (tr.state == ItemStateKind::Deferred && t < tr.wait_until - th::EPS) || tr.state == ItemStateKind::Running
         })
     }
 
@@ -534,6 +560,9 @@ impl Judge {
                         cpu: round1(tr.cur_cpu),
                         launch_s: tr.launch_s.map(round1),
                         settle_s: tr.settle_s.map(round1),
+                        delay_s: tr.item.delay_s,
+                        idle_only: tr.item.idle_only,
+                        missing: tr.item.missing,
                     },
                 )
             })
@@ -561,6 +590,9 @@ impl Judge {
                 cpu_seconds: round1(tr.cpu_seconds),
                 disk_mb: round1(tr.disk_bytes / 1_048_576.0),
                 late: tr.late,
+                delay_s: tr.item.delay_s,
+                idle_only: tr.item.idle_only,
+                missing: tr.item.missing,
             })
             .collect()
     }
@@ -778,7 +810,7 @@ mod tests {
             if t == 60 {
                 assert!(j.ready_s.is_some(), "늦은 항목을 기다리지 않고 땡!");
                 assert_eq!(j.deferred_count(), 1);
-                assert!(!j.watch_done(), "늦게 실행 대기 항목이 있으면 계속 지켜본다");
+                assert!(!j.watch_done(60.0), "늦게 실행 대기 항목이 있으면 계속 지켜본다");
             }
             if t == 158 {
                 assert!(j.refrozen(), "늦은 항목이 무거우면 다시 얼음!");
@@ -787,7 +819,7 @@ mod tests {
         }
         assert!(late_seen);
         assert!(!j.refrozen(), "늦은 항목이 안정되면 다시 땡!");
-        assert!(j.watch_done());
+        assert!(j.watch_done(200.0));
         let ready = j.ready_s.unwrap();
         assert!(ready < 45.0 + 0.1, "늦은 항목은 사용 가능 시점을 바꾸지 않음: {ready}");
         let fr = j.finish_refreeze(200.0);
@@ -796,6 +828,52 @@ mod tests {
         let rec = j.item_records().into_iter().find(|r| r.key == LATE).unwrap();
         assert!(rec.late && rec.state == ItemStateKind::Settled);
         assert_eq!(j.all_launched_s(), Some(153.0));
+    }
+
+    #[test]
+    fn planned_tasks_do_not_block_or_overextend_watch() {
+        // 실측: OneDrive Startup Task는 로그온 지연 10분, Office 작업 하나는 유휴 시에만 실행
+        let mut delayed10 = item("c:\\apps\\onedrive.exe");
+        delayed10.delay_s = 600.0;
+        let mut delayed5 = item("c:\\apps\\officeupd.exe");
+        delayed5.delay_s = 300.0;
+        let mut idle = item("c:\\apps\\idle.exe");
+        idle.idle_only = true;
+        let mut j = judge(vec![item(APP), delayed10, delayed5, idle]);
+        for t in 1..=60 {
+            j.tick(t as f64, &table(vec![explorer(), proc(20, 10, APP, 1, if t <= 5 { 50.0 } else { 0.5 })]), Some(2.0), 0.0);
+        }
+        let ready = j.ready_s.expect("예약·유휴 항목은 판정을 막지 않음");
+        assert!(ready < 45.0, "{ready}");
+        assert!(!j.watch_done(60.0), "5분 지연 작업은 345초까지 기다림");
+        assert!(j.watch_done(346.0), "10분 지연·유휴 작업은 기다리지 않음");
+        assert_eq!(j.deferred_count(), 2, "유휴 작업은 대기 수에서 뺌");
+    }
+
+    #[test]
+    fn short_task_delay_is_a_normal_item() {
+        // 실측: LG Live Wallpaper 5초, TrafficMonitor 3초 지연. 일반 항목처럼 판정을 막아야 한다.
+        let mut short = item(APP);
+        short.delay_s = 5.0;
+        let mut j = judge(vec![short]);
+        for t in 1..=4 {
+            j.tick(t as f64, &table(vec![explorer()]), Some(2.0), 0.0);
+        }
+        assert_eq!(j.checklist(4.0).items, Check::Wait);
+    }
+
+    #[test]
+    fn missing_executable_is_not_waited_for() {
+        let mut gone = item("c:\\apps\\gone.exe");
+        gone.missing = true;
+        let mut j = judge(vec![item(APP), gone]);
+        for t in 1..=12 {
+            j.tick(t as f64, &table(vec![explorer(), proc(20, 10, APP, 1, if t <= 3 { 50.0 } else { 0.5 })]), Some(2.0), 0.0);
+        }
+        assert!(j.ready_s.is_some_and(|r| r < 10.0), "파일 없는 항목을 45초 기다리지 않음: {:?}", j.ready_s);
+        assert!(j.watch_done(12.0));
+        let r = j.item_records().into_iter().find(|r| r.missing).unwrap();
+        assert_eq!(r.state, ItemStateKind::NotLaunched);
     }
 
     #[test]

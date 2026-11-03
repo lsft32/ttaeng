@@ -137,7 +137,10 @@ function renderTimeline(r) {
     t.append(svg("title", {}, `${i.name} · ${SOURCE_LABEL[i.source]} · ${STATE_LABEL[i.state]}`));
     g.append(t);
     if (i.state === "not_launched") {
-      g.append(svg("text", { x: x(0) + 4, y: y + 15, class: "axis" }, "미실행"));
+      const n = plannedNote(i);
+      const label = svg("text", { x: x(0) + 4, y: y + 15, class: "axis" }, n ? n.text : "미실행");
+      label.append(svg("title", {}, n ? n.tip : STATE_TIP.not_launched));
+      g.append(label);
       return;
     }
     const a = i.launch_s ?? 0;

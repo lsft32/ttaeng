@@ -58,6 +58,9 @@ DB는 쓰지 않고 앱 데이터 폴더(Tauri `app_data_dir`)의 파일 3개를
 | `launch_s` | float? | 실행 감지 시점 (기준 이전 실행이면 음수 가능) |
 | `settle_s` | float? | 안정 시점 |
 | `late` | bool | 45초 이후 실행(늦은 실행), v1.5 |
+| `delay_s` | float | 예약 작업 로그온 지연(초), 45초 이상이면 예약 지연, v1.6 |
+| `idle_only` | bool | 예약 작업이 유휴 시에만 실행, v1.6 |
+| `missing` | bool | 등록된 실행 파일 없음, v1.6 |
 | `peak_cpu` | float | 최대 트리 CPU |
 | `cpu_seconds` | float | 트리 CPU 누적 (코어·초) |
 | `disk_mb` | float | 트리 디스크 누적 MB |
@@ -82,14 +85,14 @@ DB는 쓰지 않고 앱 데이터 폴더(Tauri `app_data_dir`)의 파일 3개를
 | 필드 | 타입 | 설명 |
 |---|---|---|
 | `updated` | int | 갱신 시각 |
-| `tasks` | `{name, exe}[]` | 로그온 트리거가 있는 사용 중 작업. `exe`는 환경변수 확장 전 원문 |
+| `tasks` | `{name, exe, path, delay_s, idle_only}[]` | 로그온 트리거가 있는 사용 중 작업. `exe`는 환경변수 확장 전 원문. `path`(작업 폴더+이름, 측정 시작 때 작업 파일 존재 확인), `delay_s`(로그온 트리거 지연 최솟값), `idle_only`(유휴 시만 실행)는 v1.6 |
 
 ## 4. SessionView (화면 이벤트, 저장 안 함)
 | 필드 | 타입 | 설명 |
 |---|---|---|
 | `demo` | bool | 데모 측정 여부 |
 | `t` | float | 경과 초 |
-| `phase` | string | `preparing` / `ready` / `done` |
+| `phase` | string | `preparing` / `ready` / `watching`(땡! 이후 늦은 항목 관찰, v1.5) / `done` |
 | `ready_s` | float? | 사용 가능 시점 |
 | `forced` | bool | |
 | `grade` | string? | |

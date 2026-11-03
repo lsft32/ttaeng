@@ -179,9 +179,22 @@ pub fn lnk_target(d: &[u8]) -> Option<String> {
     Some(path)
 }
 
+/// 예약 작업 정의 파일. 일반 권한으로도 존재 여부는 확인된다.
+fn task_file(sysroot: &Path, task_path: &str) -> PathBuf {
+    sysroot.join(r"System32\Tasks").join(task_path.trim_start_matches('\\'))
+}
+
 fn logon_tasks(store: &Store, out: &mut Vec<StartupItem>) {
+    let sysroot = PathBuf::from(std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into()));
     for t in store.load_tasks().tasks {
-        out.push(item(&t.name, Source::LogonTask, &exe_from_command(&t.exe)));
+        // 목록은 측정이 끝난 뒤 갱신하므로, 그 사이 지운 작업은 여기서 걸러 낸다.
+        if !t.path.is_empty() && !task_file(&sysroot, &t.path).exists() {
+            continue;
+        }
+        let mut it = item(&t.name, Source::LogonTask, &exe_from_command(&t.exe));
+        it.delay_s = t.delay_s;
+        it.idle_only = t.idle_only;
+        out.push(it);
     }
 }
 
@@ -201,7 +214,10 @@ $me1 = "$env:USERDOMAIN\$env:USERNAME"; $me2 = $env:USERNAME
   $t = $_
   $lt = @($t.Triggers | Where-Object { $_.CimClass.CimClassName -eq 'MSFT_TaskLogonTrigger' -and $_.Enabled -ne $false -and (-not $_.UserId -or $_.UserId -eq $me1 -or $_.UserId -eq $me2) })
   $a = @($t.Actions | Where-Object { $_.Execute }) | Select-Object -First 1
-  if ($lt.Count -gt 0 -and $a) { [pscustomobject]@{ name = $t.TaskName; exe = $a.Execute } }
+  if ($lt.Count -gt 0 -and $a) {
+    $d = @($lt | ForEach-Object { if ($_.Delay) { [Xml.XmlConvert]::ToTimeSpan($_.Delay).TotalSeconds } else { 0 } } | Measure-Object -Minimum).Minimum
+    [pscustomobject]@{ name = $t.TaskName; exe = $a.Execute; path = $t.TaskPath + $t.TaskName; delay_s = [double]$d; idle_only = [bool]$t.Settings.RunOnlyIfIdle }
+  }
 }) | ConvertTo-Json -Compress
 "#;
 
@@ -381,6 +397,12 @@ mod tests {
         if let Some(b) = info {
             assert!(b.boot_type <= 2 && b.boot_time <= now + 5);
         }
+    }
+
+    #[test]
+    fn task_file_path() {
+        let p = task_file(Path::new(r"C:\Windows"), r"\Vendor\Update Task");
+        assert_eq!(p, PathBuf::from(r"C:\Windows\System32\Tasks\Vendor\Update Task"));
     }
 
     #[test]

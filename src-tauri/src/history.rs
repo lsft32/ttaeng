@@ -25,6 +25,15 @@ pub struct Settings {
 pub struct LogonTask {
     pub name: String,
     pub exe: String,
+    /// 작업 경로(폴더 + 이름). 측정 시작 때 작업 파일이 아직 있는지 확인하는 데 쓴다. v0.3.4
+    #[serde(default)]
+    pub path: String,
+    /// 로그온 트리거 지연(초)
+    #[serde(default)]
+    pub delay_s: f64,
+    /// 유휴 상태일 때만 실행
+    #[serde(default)]
+    pub idle_only: bool,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]

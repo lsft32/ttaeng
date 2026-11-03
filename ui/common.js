@@ -65,6 +65,17 @@ function gradeBadge(r) {
   );
 }
 
+// 예약 작업 설정·파일 상태로 "왜 아직(또는 끝내) 실행되지 않았는지" 짧게 설명한다.
+function plannedNote(i) {
+  if (i.missing) return { text: "파일 없음", tip: "등록된 경로에 실행 파일이 없습니다. 프로그램을 지우면서 시작 등록만 남은 것으로 보입니다." };
+  if (i.idle_only) return { text: "유휴 시 실행", tip: "예약 작업이 'PC가 유휴 상태일 때만' 실행되도록 설정돼 있어 로그온 직후에는 보통 실행되지 않습니다. 판정에서 기다리지 않습니다." };
+  if (i.delay_s >= 45) {
+    const m = Math.round(i.delay_s / 60);
+    return { text: `예약 지연 ${m}분`, tip: `예약 작업에 '로그온 ${m}분 뒤 실행'이 설정돼 있습니다. 일부러 늦게 실행되는 항목이라 판정을 막지 않고, 늦은 실행 추천에서도 뺍니다.` };
+  }
+  return null;
+}
+
 function stateBadge(state) {
   return el("span", { class: `state ${state}`, title: STATE_TIP[state] || "" }, STATE_LABEL[state] || state);
 }

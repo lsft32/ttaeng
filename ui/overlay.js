@@ -67,7 +67,10 @@ function render(v) {
       el("span", { class: "name" }, i.name),
       el("span", { class: "cpu num muted" }, i.state === "running" || i.state === "persistent" ? `${Math.round(i.cpu)}%` : ""),
       stateBadge(i.state),
-      el("span", { class: "time num muted" }, i.settle_s !== null ? secs(i.settle_s) : ""),
+      (() => {
+        const n = i.settle_s === null ? plannedNote(i) : null;
+        return el("span", { class: "time num muted", title: n ? n.tip : "" }, i.settle_s !== null ? secs(i.settle_s) : n ? n.text : "");
+      })(),
     ),
   );
   $("items").replaceChildren(...(rows.length ? rows : [el("li", { class: "empty" }, "추적 중인 시작 항목이 없습니다.")]));

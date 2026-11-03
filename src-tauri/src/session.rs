@@ -160,6 +160,8 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
     let measure_start_s = if demo { 0.0 } else { round1((now - anchor).max(0.0)) };
     if !demo && now - anchor > LATE_S {
         ui::show_details(app);
+        // 측정하지 않을 때도 예약 작업 목록을 갱신해 둔다(업데이트 직후 새 필드를 다음 부팅에 쓰도록).
+        startup::refresh_cache(&shared.store);
         return;
     }
 
@@ -215,7 +217,7 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
 
         tail_done = judge.ready_declared_t.is_some_and(|d| t >= d + TAIL_S);
         // 데모는 지금 떠 있지 않은 항목이 앞으로 실행될 일이 없으므로 기다리지 않는다.
-        let finished = tail_done && (demo || judge.watch_done() || t >= th::OBSERVE_CAP);
+        let finished = tail_done && (demo || judge.watch_done(t) || t >= th::OBSERVE_CAP);
         let frozen = judge.refrozen();
         if frozen && !was_frozen {
             ui::show_overlay(app);

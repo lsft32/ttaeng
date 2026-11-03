@@ -45,6 +45,12 @@ pub struct StartupItem {
     pub name: String,
     pub source: Source,
     pub matcher: Matcher,
+    /// 예약 작업의 로그온 지연(초). 0이면 지연 없음.
+    pub delay_s: f64,
+    /// 예약 작업이 "유휴 상태일 때만" 실행되는지. 로그온 직후에는 보통 실행되지 않는다.
+    pub idle_only: bool,
+    /// 등록된 실행 파일이 디스크에 없음(프로그램은 삭제됐는데 등록만 남음).
+    pub missing: bool,
 }
 
 impl StartupItem {
@@ -54,7 +60,7 @@ impl StartupItem {
             Matcher::FileName(f) => f.clone(),
             Matcher::None => format!("name:{}", name.to_lowercase()),
         };
-        Self { key, name: name.to_string(), source, matcher }
+        Self { key, name: name.to_string(), source, matcher, delay_s: 0.0, idle_only: false, missing: false }
     }
 }
 
@@ -101,6 +107,13 @@ pub struct ItemRecord {
     /// 45초 이후 실행(늦은 실행). v1.5
     #[serde(default)]
     pub late: bool,
+    // v1.6
+    #[serde(default)]
+    pub delay_s: f64,
+    #[serde(default)]
+    pub idle_only: bool,
+    #[serde(default)]
+    pub missing: bool,
 }
 
 /// 땡! 이후 늦게 실행된 항목 때문에 다시 얼음!이 된 구간.
@@ -193,6 +206,9 @@ pub struct ItemView {
     pub cpu: f64,
     pub launch_s: Option<f64>,
     pub settle_s: Option<f64>,
+    pub delay_s: f64,
+    pub idle_only: bool,
+    pub missing: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

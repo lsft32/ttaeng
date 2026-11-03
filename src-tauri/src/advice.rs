@@ -88,7 +88,8 @@ pub fn build(rec: &BootRecord, prev: &[BootRecord]) -> Vec<Advice> {
     }
 
     // R6 늦은 실행: 땡! 이후에 실행된 시작 항목
-    let mut late: Vec<&ItemRecord> = rec.items.iter().filter(|i| i.late && i.launch_s.is_some()).collect();
+    // 예약 지연으로 일부러 늦게 실행되는 작업은 세지 않는다.
+    let mut late: Vec<&ItemRecord> = rec.items.iter().filter(|i| i.late && i.launch_s.is_some() && i.delay_s < crate::judge::th::PLANNED_DELAY).collect();
     if !late.is_empty() {
         let last = late.iter().filter_map(|i| i.launch_s).fold(0.0_f64, f64::max);
         late.sort_by(|a, b| b.cpu_seconds.total_cmp(&a.cpu_seconds));
@@ -166,7 +167,9 @@ pub fn build(rec: &BootRecord, prev: &[BootRecord]) -> Vec<Advice> {
                 });
             }
         }
-        if it.state == ItemStateKind::NotLaunched && it.source != Source::Detected && rec.v >= RECORD_V && last2_v2.len() == 2 {
+        // 예약 지연·유휴 조건 작업은 로그온 직후 안 뜨는 게 정상이고, 파일 없음은 R7이 바로 알린다.
+        let expected = it.delay_s < crate::judge::th::PLANNED_DELAY && !it.idle_only && !it.missing;
+        if it.state == ItemStateKind::NotLaunched && expected && it.source != Source::Detected && rec.v >= RECORD_V && last2_v2.len() == 2 {
             let all = last2_v2.iter().all(|r| state_of(r, &it.key) == Some(ItemStateKind::NotLaunched));
             if all {
                 out.push(Advice {
@@ -181,6 +184,20 @@ pub fn build(rec: &BootRecord, prev: &[BootRecord]) -> Vec<Advice> {
                 });
             }
         }
+    }
+
+    // R7 파일 없음: 프로그램은 삭제됐는데 시작 등록만 남은 경우. 근거가 확실해 한 번에 알린다.
+    for it in rec.items.iter().filter(|i| i.missing) {
+        out.push(Advice {
+            rule: "R7".into(),
+            title: format!("'{}'은(는) 프로그램 파일이 없는데 시작 등록만 남아 있습니다", it.name),
+            detail: format!(
+                "등록된 경로에 실행 파일이 없습니다: {}. 프로그램을 지우면서 등록이 남은 것으로 보입니다. {}",
+                it.key,
+                how_to(os, it.source)
+            ),
+            item: Some(it.key.clone()),
+        });
     }
 
     // R5 네트워크 지연
@@ -237,6 +254,25 @@ mod tests {
     }
 
     #[test]
+    fn planned_and_missing_items_are_not_r3_and_missing_is_r7() {
+        let mk = |delay: f64, idle: bool, missing: bool| {
+            let mut i = it("x", ItemStateKind::NotLaunched, None);
+            i.delay_s = delay;
+            i.idle_only = idle;
+            i.missing = missing;
+            rec(20.0, vec![i], None)
+        };
+        for r in [mk(600.0, false, false), mk(0.0, true, false)] {
+            let prev = [r.clone(), r.clone()];
+            assert!(!build(&r, &prev).iter().any(|a| a.rule == "R3"));
+        }
+        let gone = mk(0.0, false, true);
+        let adv = build(&gone, &[]);
+        assert!(adv.iter().any(|a| a.rule == "R7"));
+        assert!(!adv.iter().any(|a| a.rule == "R3"));
+    }
+
+    #[test]
     fn r6_reports_late_launches_and_refreeze() {
         let mut late = it("lg", ItemStateKind::Settled, Some(160.0));
         late.late = true;
@@ -275,6 +311,9 @@ mod tests {
             cpu_seconds: 3.0,
             disk_mb: 40.0,
             late: false,
+            delay_s: 0.0,
+            idle_only: false,
+            missing: false,
         }
     }
 
