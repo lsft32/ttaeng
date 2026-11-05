@@ -32,6 +32,7 @@ DB는 쓰지 않고 앱 데이터 폴더(Tauri `app_data_dir`)의 파일 3개를
 | `observe_until_s` | float | 세션 종료 시각(기준 대비 초), v1.5 |
 | `all_launched_s` | float? | 마지막으로 실행된 시작 항목의 실행 시각, v1.5 |
 | `refreeze` | `{key, name, from_s, to_s}[]` | 땡! 이후 다시 얼음!이 된 구간, v1.5 |
+| `probe` | object? | 체감 반응 지표, v1.7 (아래 §1-1) |
 | `boot_kind` | string | `cold` / `fast_startup` / `resume`(최대 절전 복귀, v1.4) / `demo` |
 | `boot_time` | int | OS 부팅 시각 (Windows v1.4: Kernel-Boot 27 이벤트 시각, 못 읽으면 sysinfo) |
 | `anchor_time` | int | 기준 시각 (바탕화면 표시) |
@@ -73,11 +74,20 @@ DB는 쓰지 않고 앱 데이터 폴더(Tauri `app_data_dir`)의 파일 3개를
 | `detail` | string | 근거 수치와 방법 |
 | `item` | string? | 관련 항목 키 |
 
+## 1-1. probe (BootRecord, v1.7)
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `baseline` | `{timer_ms, cpu_ms, io_ms}` | 측정 직후 10회 중앙값 |
+| `samples` | `[t, timer_ms, cpu_ms, io_ms][]` | 2초 간격 표본(기준 대비 초) |
+| `recovered_s` | float? | 느려진 정도 1.5배 이하가 10초 이어지기 시작한 시각 |
+| `peak_ratio` | float | 측정 중 가장 크게 느려진 배율(5표본 중앙값 기준) |
+
 ## 2. settings.json
 | 필드 | 타입 | 기본값 | 설명 |
 |---|---|---|---|
 | `autostart_initialized` | bool | false | 첫 실행 자동 등록을 했는지 |
 | `last_update_check` | int | 0 | 마지막 업데이트 확인 시각(epoch 초). 0이면 확인한 적 없음 |
+| `probe_baseline` | `{timer_ms, cpu_ms, io_ms}`? | null | 직전 측정 끝에 잰 반응 지표 기준값. 측정 중 오버레이 배율 표시에 씀, v1.7 |
 
 제거(업데이트 아님) 시 이 파일을 지운다. 다시 설치하면 첫 실행에서 자동 시작을 다시 등록한다.
 

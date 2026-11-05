@@ -3,9 +3,9 @@
 use crate::collector::Collector;
 use crate::judge::{DetectRules, Judge, th};
 use crate::model::*;
-use crate::{Shared, advice, network, platform, startup, ui};
+use crate::{Shared, advice, network, platform, probe, startup, ui};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -110,6 +110,7 @@ fn make_view(
     background: Vec<BackgroundView>,
     top_advice: Option<Advice>,
     measure_start_s: f64,
+    slow_ratio: Option<f64>,
 ) -> SessionView {
     let checklist = judge.checklist(t);
     let network_note = match (hit, checklist.network) {
@@ -134,6 +135,7 @@ fn make_view(
         measure_start_s,
         refrozen: judge.refrozen(),
         deferred: judge.deferred_count(),
+        slow_ratio,
     }
 }
 
@@ -186,6 +188,12 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
 
     let net: Arc<Mutex<Option<network::NetHit>>> = Arc::new(Mutex::new(None));
     network::spawn(anchor, net.clone());
+    // 체감 반응 지표(F12): 측정 내내 2초마다 잰다. 화면 배율은 직전 측정의 기준값으로 계산한다.
+    let probe_file = probe::probe_file(shared.store.dir());
+    let probe_samples: Arc<Mutex<Vec<[f64; 4]>>> = Arc::new(Mutex::new(Vec::new()));
+    let probe_stop = Arc::new(AtomicBool::new(false));
+    probe::spawn(anchor, probe_file.clone(), probe_samples.clone(), probe_stop.clone());
+    let prev_baseline = shared.store.load_settings().probe_baseline;
     if let Ok(mut d) = shared.demo.lock() {
         if demo {
             *d = None;
@@ -208,6 +216,11 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
         let s = col.sample();
         let t = now_f() - anchor;
         let hit = net.lock().ok().and_then(|g| *g);
+        let slow_ratio = prev_baseline.and_then(|b| {
+            let s = probe_samples.lock().ok()?;
+            let tail = &s[s.len().saturating_sub(5)..];
+            probe::smoothed(tail, &b).last().map(|x| round1(x.1))
+        });
         let net_s = network::judge_time(hit);
         judge.tick(t, &s.procs, net_s, s.sys_cpu);
         self_cpu_sum += s.self_cpu;
@@ -231,7 +244,7 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
             } else {
                 "ready"
             };
-            publish(app, shared, make_view(&judge, t, demo, phase, hit, bg, None, measure_start_s));
+            publish(app, shared, make_view(&judge, t, demo, phase, hit, bg, None, measure_start_s, slow_ratio));
             continue;
         }
 
@@ -270,6 +283,17 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
             rec.event100 = startup::windows::read_event100(boot);
             apply_boot_info(&mut rec, startup::windows::read_boot_info(anchor as u64));
         }
+        // 반응 지표 마무리: 표본 수집을 멈추고, 지금(측정 직후)의 평소 값을 기준값으로 잰다.
+        probe_stop.store(true, Ordering::SeqCst);
+        let base = probe::baseline(&probe_file);
+        let _ = std::fs::remove_file(&probe_file);
+        let samples = probe_samples.lock().map(|v| v.clone()).unwrap_or_default();
+        rec.probe = Some(probe::finish(samples, base));
+        if let Some(b) = base {
+            let mut st = shared.store.load_settings();
+            st.probe_baseline = Some(b);
+            shared.store.save_settings(&st);
+        }
         let prev: Vec<BootRecord> = history.into_iter().filter(|r| r.boot_kind != "demo").collect();
         rec.advice = advice::build(&rec, &prev);
         if demo {
@@ -280,7 +304,7 @@ fn run(app: &AppHandle, shared: &Shared, demo: bool) {
             let _ = shared.store.append_history(&rec);
         }
         let _ = app.emit("history-updated", ());
-        publish(app, shared, make_view(&judge, t, demo, "done", hit, bg, rec.advice.first().cloned(), measure_start_s));
+        publish(app, shared, make_view(&judge, t, demo, "done", hit, bg, rec.advice.first().cloned(), measure_start_s, None));
         startup::refresh_cache(&shared.store);
         return;
     }

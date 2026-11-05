@@ -1,6 +1,7 @@
 //! 평가 등급과 추천. 측정값이 근거인 규칙만 둔다.
 
 use crate::model::*;
+use crate::probe;
 
 pub fn grade(ready_s: f64, forced: bool) -> String {
     let g = if forced || ready_s > 120.0 {
@@ -200,6 +201,41 @@ pub fn build(rec: &BootRecord, prev: &[BootRecord]) -> Vec<Advice> {
         });
     }
 
+    // R8 체감 반응과 땡! 비교(F12): 시작프로그램이 조용해진 시점과 실제 반응이 회복된 시점이 얼마나 다른지
+    if let Some(p) = rec.probe.as_ref().filter(|p| p.baseline.is_some() && !rec.late_start) {
+        if let Some(r) = p.recovered_s {
+            let diff = rec.ready_s - r;
+            if diff >= 20.0 {
+                out.push(Advice {
+                    rule: "R8".into(),
+                    title: format!("반응 속도는 {r:.0}초에 평소 수준으로 돌아왔습니다 (땡! {:.0}초)", rec.ready_s),
+                    detail: format!(
+                        "측정 중 가장 느렸을 때는 평소의 {:.1}배였습니다. 땡!보다 {diff:.0}초 일찍 써도 체감 차이는 작았을 수 있습니다. 땡!은 시작프로그램이 모두 정리된 시점이고, 반응 속도는 그보다 먼저 회복될 수 있습니다.",
+                        p.peak_ratio
+                    ),
+                    item: None,
+                });
+            } else if diff <= -20.0 {
+                out.push(Advice {
+                    rule: "R8".into(),
+                    title: format!("땡! 뒤에도 {r:.0}초까지 반응이 느렸습니다"),
+                    detail: format!(
+                        "측정 중 가장 느렸을 때는 평소의 {:.1}배였습니다. 시작프로그램 목록에 없는 작업(Windows 업데이트·백신 검사·인덱싱 등)이 이어졌을 수 있습니다. 상세 화면의 백그라운드 목록을 확인하세요.",
+                        p.peak_ratio
+                    ),
+                    item: None,
+                });
+            }
+        } else if p.peak_ratio > probe::RECOVER_RATIO {
+            out.push(Advice {
+                rule: "R8".into(),
+                title: "측정이 끝날 때까지 반응 속도가 평소 수준으로 돌아오지 않았습니다".into(),
+                detail: format!("측정 중 가장 느렸을 때는 평소의 {:.1}배였습니다. 측정 직후 잰 기준값이 평소보다 높게 잡혔을 수도 있습니다.", p.peak_ratio),
+                item: None,
+            });
+        }
+    }
+
     // R5 네트워크 지연
     if let Some(n) = rec.network_s {
         if n >= 20.0 {
@@ -270,6 +306,25 @@ mod tests {
         let adv = build(&gone, &[]);
         assert!(adv.iter().any(|a| a.rule == "R7"));
         assert!(!adv.iter().any(|a| a.rule == "R3"));
+    }
+
+    #[test]
+    fn r8_compares_recovery_with_ready() {
+        let with = |ready: f64, rec_s: Option<f64>| {
+            let mut r = rec(ready, vec![], None);
+            r.probe = Some(probe::ProbeRecord {
+                baseline: Some(probe::Baseline { timer_ms: 0.5, cpu_ms: 0.5, io_ms: 1.0 }),
+                samples: vec![],
+                recovered_s: rec_s,
+                peak_ratio: 2.4,
+            });
+            build(&r, &[])
+        };
+        let early = with(100.0, Some(40.0));
+        assert!(early.iter().any(|a| a.rule == "R8" && a.title.contains("40초")));
+        let late = with(60.0, Some(95.0));
+        assert!(late.iter().any(|a| a.rule == "R8" && a.title.contains("95초")));
+        assert!(!with(60.0, Some(55.0)).iter().any(|a| a.rule == "R8"), "차이가 작으면 내지 않음");
     }
 
     #[test]

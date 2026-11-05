@@ -19,6 +19,9 @@ pub struct Settings {
     /// 마지막 업데이트 확인 시각(epoch 초). 0이면 확인한 적 없음.
     #[serde(default)]
     pub last_update_check: u64,
+    /// 직전 측정 끝에 잰 반응 지표 기준값(요구서 F12). 측정 중 오버레이 배율 표시에 쓴다.
+    #[serde(default)]
+    pub probe_baseline: Option<crate::probe::Baseline>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -46,6 +49,10 @@ impl Store {
     pub fn new(dir: PathBuf) -> Self {
         let _ = fs::create_dir_all(&dir);
         Self { dir }
+    }
+
+    pub fn dir(&self) -> &Path {
+        &self.dir
     }
 
     fn path(&self, name: &str) -> PathBuf {

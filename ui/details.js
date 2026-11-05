@@ -76,6 +76,18 @@ function renderCards(r) {
       ),
     );
   }
+  if (r.probe && r.probe.baseline) {
+    const rec = r.probe.recovered_s;
+    const diff = rec != null ? r.ready_s - rec : null;
+    cards.push(
+      stat(
+        "반응 회복",
+        rec != null ? secs(rec) : "측정 중 미회복",
+        diff == null ? `최대 ${r.probe.peak_ratio.toFixed(1)}배` : Math.abs(diff) < 5 ? "땡!과 비슷" : diff > 0 ? `땡!보다 ${Math.round(diff)}초 빠름` : `땡!보다 ${Math.round(-diff)}초 늦음`,
+        "PC 반응(타이머·계산·디스크)이 평소의 1.5배 이하로 돌아와 10초 이어지기 시작한 시각입니다. 땡!보다 많이 빠르면 땡! 전에 써도 체감 차이가 작았다는 뜻입니다.",
+      ),
+    );
+  }
   const late = r.items.filter((i) => i.late);
   if (late.length) {
     const busy = (r.refreeze || []).reduce((s, f) => s + (f.to_s - f.from_s), 0);
@@ -178,6 +190,63 @@ function renderTimeline(r) {
   );
 }
 
+// 체감 반응 지표(F12): 표본별 느려진 정도(가장 큰 배율, 5표본 중앙값)
+function probeSeries(p) {
+  const b = p.baseline;
+  const f = [Math.max(b.timer_ms, 1), Math.max(b.cpu_ms, 0.5), Math.max(b.io_ms, 2)];
+  // 계산 지표(s[2])는 하이브리드 CPU에서 코어 배치에 따라 흔들려 판단에서 뺀다(툴팁에만 표시).
+  const raw = p.samples.map((s) => Math.max(0, ...[[s[1], f[0]], [s[3], f[2]]].filter(([v]) => Number.isFinite(v) && v >= 0).map(([v, b]) => v / b)));
+  return p.samples.map((s, i) => {
+    const w = raw.slice(Math.max(0, i - 2), i + 3).sort((a, c) => a - c);
+    return { t: s[0], r: w[Math.floor(w.length / 2)], s };
+  });
+}
+
+function renderProbe(r) {
+  const p = r.probe;
+  const card = $("probeCard");
+  card.hidden = !(p && p.baseline && p.samples.length > 1);
+  if (card.hidden) return;
+  const pts = probeSeries(p);
+  const W = Math.max(560, $("probeChart").clientWidth || 760);
+  const H = 150;
+  const L = 40;
+  const R = 16;
+  const T = 10;
+  const B = 22;
+  const maxT = Math.max(...pts.map((q) => q.t), r.ready_s) * 1.04;
+  const maxR = Math.max(2, ...pts.map((q) => q.r)) * 1.1;
+  const x = (t) => L + (Math.max(t, 0) / maxT) * (W - L - R);
+  const y = (v) => T + (1 - Math.min(v, maxR) / maxR) * (H - T - B);
+  const g = svg("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "체감 반응 그래프" });
+  // 눈금이 겹치지 않게: 크게 튄 경우 1.5× 눈금은 생략
+  const ticks = maxR > 4 ? [1, Math.round(maxR)] : [1, 1.5, Math.round(maxR)];
+  for (const v of [...new Set(ticks)]) {
+    g.append(svg("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), class: "grid" }));
+    g.append(svg("text", { x: L - 4, y: y(v) + 4, "text-anchor": "end", class: "axis" }, `${v}×`));
+  }
+  const step = maxT > 300 ? 60 : maxT > 120 ? 30 : 10;
+  for (let s = 0; s <= maxT; s += step) {
+    g.append(svg("text", { x: x(s), y: H - 6, "text-anchor": "middle", class: "axis" }, `${s}s`));
+  }
+  g.append(svg("polyline", { points: pts.map((q) => `${x(q.t)},${y(q.r)}`).join(" "), style: "fill:none;stroke:var(--ice);stroke-width:2" }));
+  for (const q of pts) {
+    const dot = svg("circle", { cx: x(q.t), cy: y(q.r), r: 6, style: "fill:transparent" });
+    dot.append(svg("title", {}, `${secs(q.t)} · 평소의 ${q.r.toFixed(1)}배\n타이머 ${q.s[1]}ms · 계산 ${q.s[2]}ms · 디스크 ${q.s[3]}ms`));
+    g.append(dot);
+  }
+  g.append(svg("line", { x1: x(r.ready_s), x2: x(r.ready_s), y1: T, y2: H - B, class: "ready" }));
+  if (p.recovered_s != null) {
+    g.append(svg("line", { x1: x(p.recovered_s), x2: x(p.recovered_s), y1: T, y2: H - B, style: "stroke:var(--ice);stroke-dasharray:4 3" }));
+  }
+  $("probeChart").replaceChildren(g);
+  $("probeLegend").replaceChildren(
+    el("span", {}, el("i", { style: "background:var(--ice)" }), "느려진 정도"),
+    el("span", {}, el("i", { style: "background:var(--ok);width:2px" }), "땡!"),
+    el("span", {}, el("i", { style: "background:var(--ice);width:2px" }), "반응 회복"),
+  );
+}
+
 function renderAdvice(r) {
   const box = $("advice");
   if (!r.advice.length) {
@@ -199,6 +268,7 @@ function renderRecord(r) {
   $("recWhen").textContent = when(r.anchor_time);
   renderCards(r);
   renderTimeline(r);
+  renderProbe(r);
   renderAdvice(r);
 }
 
@@ -256,9 +326,22 @@ function renderUpdate(u) {
   $("ver").title = u.last_check ? `마지막 업데이트 확인: ${when(u.last_check)}` : "아직 업데이트를 확인하지 않았습니다.";
   const box = $("upd");
   const btn = $("updInstall");
-  $("updCheck").disabled = u.checking || u.installing || u.measuring;
-  $("updCheck").textContent = u.checking ? "확인 중…" : "업데이트 확인";
-  $("updCheck").title = u.measuring ? "측정 중에는 확인하지 않습니다(측정 결과에 영향)." : "새 버전이 있는지 지금 확인합니다. 자동 확인은 측정이 끝난 뒤 6시간에 한 번입니다.";
+  // 헤더는 스크롤해도 보이므로, 결과를 헤더 버튼에서 바로 알 수 있게 한다.
+  const btnTop = $("updCheck");
+  const canInstall = !!u.available && !u.installing;
+  btnTop.disabled = u.checking || u.installing || u.measuring;
+  btnTop.className = canInstall ? "primary" : "";
+  btnTop.textContent = u.installing ? "설치 중…" : u.checking ? "확인 중…" : canInstall ? `${u.available.version} 설치` : "업데이트 확인";
+  btnTop.title = u.measuring
+    ? "측정 중에는 확인·설치하지 않습니다(측정 결과에 영향)."
+    : canInstall
+      ? "내려받아 설치하고 다시 실행합니다. 자동 시작 설정과 부팅 이력은 유지됩니다."
+      : "새 버전이 있는지 지금 확인합니다. 자동 확인은 측정이 끝난 뒤 6시간에 한 번입니다.";
+  // 직접 누른 확인이 "새 버전 없음"으로 끝나면 잠깐 알려 준다.
+  if (manualCheck && lastUpd && lastUpd.checking && !u.checking) {
+    manualCheck = false;
+    if (!u.available && !u.error) flashNote("최신 버전입니다");
+  }
   box.classList.toggle("err", !!u.error && !u.available);
   if (u.installing) {
     box.hidden = false;
@@ -282,10 +365,25 @@ function renderUpdate(u) {
   }
 }
 
-$("updCheck").addEventListener("click", () => invoke("check_update", { force: true }));
+let manualCheck = false;
+function flashNote(text) {
+  const n = $("updNote");
+  n.textContent = text;
+  n.hidden = false;
+  clearTimeout(flashNote.timer);
+  flashNote.timer = setTimeout(() => (n.hidden = true), 4000);
+}
+$("updCheck").addEventListener("click", () => {
+  if (lastUpd && lastUpd.available) {
+    invoke("install_update").catch((e) => renderUpdate({ ...lastUpd, error: String(e) }));
+  } else {
+    manualCheck = true;
+    invoke("check_update", { force: true });
+  }
+});
 $("updInstall").addEventListener("click", () => invoke("install_update").catch((e) => renderUpdate({ ...lastUpd, error: String(e) })));
 let lastUpd = null;
-listen("update-state", (u) => { lastUpd = u; renderUpdate(u); });
+listen("update-state", (u) => { renderUpdate(u); lastUpd = u; });
 // 창을 볼 때 자동 확인(6시간 간격 제한은 앱이 판단)
 window.addEventListener("focus", () => invoke("check_update", { force: false }));
 

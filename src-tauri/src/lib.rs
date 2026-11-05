@@ -6,6 +6,7 @@ mod judge;
 mod model;
 mod network;
 mod platform;
+mod probe;
 mod session;
 mod startup;
 mod update;

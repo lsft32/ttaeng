@@ -171,6 +171,9 @@ pub struct BootRecord {
     pub all_launched_s: Option<f64>,
     #[serde(default)]
     pub refreeze: Vec<Refreeze>,
+    /// 체감 반응 지표. v1.7
+    #[serde(default)]
+    pub probe: Option<crate::probe::ProbeRecord>,
 }
 
 /// 기록 스키마 버전. 2부터 늦은 실행을 10분까지 지켜본 기록이다.
@@ -237,6 +240,8 @@ pub struct SessionView {
     pub refrozen: bool,
     /// 아직 실행되지 않고 기다리는 항목 수.
     pub deferred: usize,
+    /// 지금 반응이 평소의 몇 배 느린지(직전 측정의 기준값 대비, 최근 5표본 중앙값). 기준값이 없으면 None.
+    pub slow_ratio: Option<f64>,
 }
 
 pub fn round1(v: f64) -> f64 {

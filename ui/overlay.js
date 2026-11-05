@@ -48,6 +48,9 @@ function render(v) {
   } else {
     sub.append(`시작 항목 ${done} / ${total} 정리됨`);
   }
+  if (v.slow_ratio != null && v.slow_ratio >= 1.5) {
+    sub.append(" · ", el("span", { class: "late", title: "지금 PC 반응(타이머·계산·디스크)이 직전 측정 직후 잰 평소 값보다 이만큼 느립니다." }, `반응 평소의 ${v.slow_ratio.toFixed(1)}배`));
+  }
   if (!v.demo && v.measure_start_s >= 30) {
     sub.append(" · ", el("span", { class: "late", title: "그 전에 끝난 작업의 정확한 시점은 알 수 없어 결과는 참고용입니다." }, `측정 ${Math.round(v.measure_start_s)}초 늦게 시작`));
   }

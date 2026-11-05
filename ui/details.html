@@ -19,6 +19,7 @@
         <span>로그인 시 자동 실행</span>
         <span id="autoMethod" class="muted"></span>
       </label>
+      <span id="updNote" class="muted" hidden></span>
       <button id="updCheck">업데이트 확인</button>
       <button id="demo" class="primary">지금 측정해 보기</button>
     </div>
@@ -51,6 +52,14 @@
           <span id="legend" class="legend"></span>
         </div>
         <div id="timeline"></div>
+      </div>
+
+      <div class="card" id="probeCard" hidden>
+        <div class="cardHead">
+          <h3>체감 반응 <span class="tip" title="측정 중 2초마다 타이머 지연·작은 계산·4KB 디스크 쓰기 시간을 재서, 측정 직후 잰 평소 값과 비교했습니다. 타이머·디스크 중 더 크게 느려진 배율(5표본 중앙값)을 그렸습니다. 계산 시간은 하이브리드 CPU에서 코어 종류에 따라 흔들려 참고로만 보여줍니다. 1.5배 이하가 10초 이어지기 시작한 때를 '반응 회복'으로 봅니다.">i</span></h3>
+          <span id="probeLegend" class="legend"></span>
+        </div>
+        <div id="probeChart"></div>
       </div>
 
       <div class="card">
